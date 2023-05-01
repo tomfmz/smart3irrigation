@@ -2,7 +2,7 @@
 
 ## Software Setup
 * install [vsCode](https://code.visualstudio.com/)
-* inatall [Git](https://git-scm.com/download/win)
+* install [Git](https://git-scm.com/download/win)
 * create [GitHub Acc](https://github.com/)
 
 ## Workspace Setup
