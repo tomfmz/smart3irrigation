@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include "LoRa_E32.h"
 
 void setup() {
   // put your setup code here, to run once:
