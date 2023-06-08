@@ -25,6 +25,9 @@
 /** Define the SDI-12 bus */
 SDI12 mySDI12(DATA_PIN);
 
+void recvWithStartEndMarkers(void);
+String convertToString(char* a, int size);
+
 /**
   '?' is a wildcard character which asks any and all sensors to respond
   'I' indicates that the command wants information about the sensor
