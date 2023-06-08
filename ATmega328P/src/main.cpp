@@ -31,42 +31,75 @@ SDI12 mySDI12(DATA_PIN);
   '!' finishes the command
 */
 String myCommand = "?M!";
-String myCommand2 = "?D0!";
+
+const byte numChars = 32;
+char receivedChars[numChars];
+
+boolean newData = false;
 
 void setup() {
   pinMode(DATA_PIN,INPUT);
   Serial.begin(SERIAL_BAUD);
   while (!Serial)
     ;
-
-  Serial.println("Opening SDI-12 bus...");
   mySDI12.begin();
   delay(500);  // allow things to settle
-
-  // Power the sensors;
-  if (POWER_PIN > 0) {
-    Serial.println("Powering up sensors...");
-    pinMode(POWER_PIN, OUTPUT);
-    digitalWrite(POWER_PIN, HIGH);
-    delay(200);
-  }
 }
 
 void loop() {
-  mySDI12.sendCommand(myCommand);
-  Serial.println("SDI-12 Command sent...");
-  delay(300);                    // wait a while for a response
-  while (mySDI12.available()) {  // write the response to the screen
-    Serial.write(mySDI12.read());
-    // Serial.println("SDI-12 Command received...");
+  //wait for the ESP to sent a request
+  recvWithStartEndMarkers();
+  myCommand = convertToString(receivedChars, numChars);
+
+  //handle sent SDI-12 request
+  if (newData){
+    mySDI12.sendCommand(myCommand);
+    delay(300);                    // wait a while for a response
+    while (mySDI12.available()) {  // write the response to serial
+      Serial.write(mySDI12.read());
+    }
+    newData = false;
   }
-  delay(3000);
-  mySDI12.sendCommand(myCommand2);
-  Serial.println("SDI-12 Command2 sent...");
-  delay(300);                    // wait a while for a response
-  while (mySDI12.available()) {  // write the response to the screen
-    Serial.write(mySDI12.read());
-    // Serial.println("SDI-12 Command received...");
-  }
-  delay(5000);  // print again in three seconds
+  
+}
+
+String convertToString(char* a, int size){
+    int i;
+    String s = "";
+    for (i = 0; i < size; i++){
+      if(a[i] == '\0') break;
+      s = s + a[i];
+    } 
+    return s;
+}
+
+void recvWithStartEndMarkers() {
+    static boolean recvInProgress = false;
+    static byte ndx = 0;
+    char startMarker = '<';
+    char endMarker = '>';
+    char rc;
+ 
+    while (Serial.available() > 0 && newData == false) {
+        rc = Serial.read();
+
+        if (recvInProgress == true) {
+            if (rc != endMarker) {
+                receivedChars[ndx] = rc;
+                ndx++;
+                if (ndx >= numChars) {
+                    ndx = numChars - 1;
+                }
+            }
+            else {
+                receivedChars[ndx] = '\0'; // terminate the string
+                recvInProgress = false;
+                ndx = 0;
+                newData = true;
+            }
+        }
+        else if (rc == startMarker) {
+            recvInProgress = true;
+        }
+    }
 }
