@@ -2,9 +2,9 @@
 #include "DHT.h"   
 #include <SoftwareSerial.h>
 #include <DS1603L.h>
+#include <TinyGPSPlus.h>
 #define FREQUENCY_868
 #include "LoRa_E32.h"       
-
 
 #define DEBUG 1
 #define DHTPIN 4          // DHT Pin
@@ -13,6 +13,8 @@
 #define SWSERIAL_RX 27
 #define DS1603L_TX 23
 #define DS1603L_RX 22
+#define GPS_TX 14
+#define GPS_RX 12
 #define MOSFET_PUMPE 33 
 #define FLOW 39
 #define FLOW_ON_OFF 32
@@ -27,6 +29,7 @@ void flow_handler(void);
 void readSMT100(void);
 void readFlow(void);
 void readDS1603L(void);
+void readGPS(void);
 
 const double mls_per_count = 3.0382;
 volatile unsigned long flow_counter = 0;
@@ -48,6 +51,8 @@ EspSoftwareSerial::UART ds1603LSerial;
 
 DS1603L ds1603(ds1603LSerial);
 LoRa_E32 e32ttl100(16,17,&Serial2,-1,-1,-1,UART_BPS_RATE_9600,SERIAL_8N1); // Arduino RX <-- e32 TX, Arduino TX --> e32 RX
+
+TinyGPSPlus gps;
 void printLORAParameters(struct Configuration configuration);
 void printLORAModuleInformation(struct ModuleInformation moduleInformation);
 void initLORA(void);
@@ -55,7 +60,7 @@ void initLORA(void);
 void setup() {
   // Hardwareserials
   Serial.begin(HWSERIAL_BAUD);
-  Serial1.begin(9600, SERIAL_8N1, 9, 10); // funktioniert
+  Serial1.begin(9600, SERIAL_8N1, 12, 14); // funktioniert
   Serial2.begin(9600, SERIAL_8N1, 16, 17); // funktioniert
 
   sdiSerial.begin(SWSERIAL_BAUD, SWSERIAL_8N1, SWSERIAL_RX, SWSERIAL_TX, false);
@@ -91,20 +96,27 @@ void setup() {
 	initLORA();
 
   delay(500);  // allow things to settle
-  while (!Serial)
+  while (!Serial) // Auf alle Serials warten?
     ;
 }
 
 void loop() {
-  //readDHT22();
-  //readSMT100();
+  unsigned long loopend = millis() + 10000;
+  readDHT22();
+  readSMT100();
   readFlow();
   readDS1603L();
   //digitalWrite(MOSFET_PUMPE, !digitalRead(MOSFET_PUMPE));
   //digitalWrite(FLOW_ON_OFF, HIGH);
 
   
-  delay(2000);
+  while(millis() < loopend) {
+    while(Serial1.available() > 0)
+      gps.encode(Serial1.read());
+  }
+  Serial.println();
+
+  readGPS();
 }
 
 bool readDHT22(void) {
@@ -210,6 +222,54 @@ void readSMT100(void){
   smt100_.volwater = stm100moisture_s.toFloat();
   smt100_.temp = stm100temp_s.toFloat();
   smt100_.voltage = stm100voltage_s.toFloat();
+}
+
+void readGPS()
+{
+  String gpsLocation = "";
+
+  if (gps.date.isValid() && (gps.date.age() <= 1500))
+  {
+    if (gps.time.hour() < 10)
+      gpsLocation += "0";
+    gpsLocation += String (gps.time.hour());
+    gpsLocation += (":");
+    if (gps.time.minute() < 10)
+      gpsLocation += "0";
+    gpsLocation += String (gps.time.minute());
+    gpsLocation += (":");
+    if (gps.time.second() < 10)
+      gpsLocation += "0";
+    gpsLocation += String (gps.time.second());
+    gpsLocation += (",");
+  }
+
+  else
+    gpsLocation += "NO_VALID_TIMESTAMP,";
+
+  if (gps.location.isValid())
+  {
+    gpsLocation += String (gps.speed.kmph());
+    gpsLocation += (",");
+    gpsLocation += String (gps.location.lat(), 6);
+    gpsLocation += (",");
+    gpsLocation += String (gps.location.lng(), 6);
+    gpsLocation += (",");
+  }
+
+  else
+  {
+    gpsLocation += "NO_VALID_SPEED,NO_VALID_LAT,NOV_VALID_LONG,";
+
+  }
+
+  if (gps.course.isValid())
+    gpsLocation += String (gps.course.deg());
+  else
+    gpsLocation += "NO_VALID_COURSE";
+
+
+  Serial.println(gpsLocation);
 }
 
 void initLORA(void){
