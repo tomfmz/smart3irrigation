@@ -1,8 +1,14 @@
 #include <Arduino.h>
+#include "DHT.h"   
 #include <SoftwareSerial.h>
 #include <DS1603L.h>
+#define FREQUENCY_868
+#include "LoRa_E32.h"       
+
 
 #define DEBUG 1
+#define DHTPIN 4          // DHT Pin
+#define DHTTYPE DHT22
 #define SWSERIAL_TX 26
 #define SWSERIAL_RX 27
 #define DS1603L_TX 23
@@ -12,6 +18,10 @@
 #define FLOW_ON_OFF 32
 #define SWSERIAL_BAUD 9600
 #define HWSERIAL_BAUD 115200 /*!< The baud rate for the output serial port */
+unsigned long int time_old = 0;
+int t_dht = 1000; //millis
+
+bool readDHT22(void);
 
 void flow_handler(void);
 void readSMT100(void);
@@ -31,10 +41,16 @@ struct smt100
 };
 smt100 smt100_;
 
+DHT dht(DHTPIN, DHTTYPE);
+
 EspSoftwareSerial::UART sdiSerial;
 EspSoftwareSerial::UART ds1603LSerial;
 
 DS1603L ds1603(ds1603LSerial);
+LoRa_E32 e32ttl100(16,17,&Serial2,-1,-1,-1,UART_BPS_RATE_9600,SERIAL_8N1); // Arduino RX <-- e32 TX, Arduino TX --> e32 RX
+void printLORAParameters(struct Configuration configuration);
+void printLORAModuleInformation(struct ModuleInformation moduleInformation);
+void initLORA(void);
 
 void setup() {
   // Hardwareserials
@@ -68,6 +84,11 @@ void setup() {
   attachInterrupt(digitalPinToInterrupt(FLOW), flow_handler, FALLING);
   
   ds1603.begin();
+  
+  dht.begin();
+
+  //init of LoRA Modul
+	initLORA();
 
   delay(500);  // allow things to settle
   while (!Serial)
@@ -75,6 +96,7 @@ void setup() {
 }
 
 void loop() {
+  //readDHT22();
   //readSMT100();
   readFlow();
   readDS1603L();
@@ -83,6 +105,30 @@ void loop() {
 
   
   delay(2000);
+}
+
+bool readDHT22(void) {
+  bool read = false;
+  if ((millis()-time_old)>t_dht){
+    float h = dht.readHumidity();    // Lesen der Luftfeuchtigkeit und speichern in die Variable h
+    float t = dht.readTemperature(); // Lesen der Temperatur in °C und speichern in die Variable t
+    if (DEBUG){
+      Serial.print("Luftfeuchtigkeit:");
+      Serial.print(h);                  // Ausgeben der Luftfeuchtigkeit
+      Serial.print("%\t");              // Tabulator
+      Serial.print("Temperatur: ");
+      Serial.print(t);                  // Ausgeben der Temperatur
+      Serial.write("°");                // Schreiben des ° Zeichen
+      Serial.println("C");
+    }
+    time_old = millis();
+    /*********************( Überprüfen ob alles richtig Ausgelesen wurde )*********************/ 
+    if (isnan(h) || isnan(t)) {       
+      Serial.println("Fehler beim auslesen des Sensors!");
+      read = false;
+    }else read = true;
+  }
+  return read;
 }
 
 void flow_handler() {
@@ -164,4 +210,87 @@ void readSMT100(void){
   smt100_.volwater = stm100moisture_s.toFloat();
   smt100_.temp = stm100temp_s.toFloat();
   smt100_.voltage = stm100voltage_s.toFloat();
+}
+
+void initLORA(void){
+  // Startup all pins and UART
+	e32ttl100.begin();
+
+	ResponseStructContainer c;
+	c = e32ttl100.getConfiguration();
+	// It's important get configuration pointer before all other operation
+	Configuration configuration = *(Configuration*) c.data;
+	Serial.println(c.status.getResponseDescription());
+	Serial.println(c.status.code);
+
+	printLORAParameters(configuration);
+  configuration.ADDL = 0x0;
+	configuration.ADDH = 0x1;
+	configuration.CHAN = 0x19;
+
+	configuration.OPTION.fec = FEC_0_OFF;
+	configuration.OPTION.fixedTransmission = FT_TRANSPARENT_TRANSMISSION;
+	configuration.OPTION.ioDriveMode = IO_D_MODE_PUSH_PULLS_PULL_UPS;
+	configuration.OPTION.transmissionPower = POWER_17;
+	configuration.OPTION.wirelessWakeupTime = WAKE_UP_1250;
+
+	configuration.SPED.airDataRate = AIR_DATA_RATE_011_48;
+	configuration.SPED.uartBaudRate = UART_BPS_115200;
+	configuration.SPED.uartParity = MODE_00_8N1;
+
+	// Set configuration changed and set to not hold the configuration
+	ResponseStatus rs = e32ttl100.setConfiguration(configuration, WRITE_CFG_PWR_DWN_LOSE);
+	Serial.println(rs.getResponseDescription());
+	Serial.println(rs.code);
+	printLORAParameters(configuration);
+
+	ResponseStructContainer cMi;
+	cMi = e32ttl100.getModuleInformation();
+	// It's important get information pointer before all other operation
+	ModuleInformation mi = *(ModuleInformation*)cMi.data;
+
+	Serial.println(cMi.status.getResponseDescription());
+	Serial.println(cMi.status.code);
+
+	printLORAModuleInformation(mi);
+
+	c.close();
+	cMi.close();
+
+  rs = e32ttl100.sendMessage("Hello, world?");
+  // Check If there is some problem of succesfully send
+  Serial.println(rs.getResponseDescription());
+}
+
+void printLORAParameters(struct Configuration configuration) {
+	Serial.println("----------------------------------------");
+
+	Serial.print(F("HEAD BIN: "));  Serial.print(configuration.HEAD, BIN);Serial.print(" ");Serial.print(configuration.HEAD, DEC);Serial.print(" ");Serial.println(configuration.HEAD, HEX);
+	Serial.println(F(" "));
+	Serial.print(F("AddH BIN: "));  Serial.println(configuration.ADDH, BIN);
+	Serial.print(F("AddL BIN: "));  Serial.println(configuration.ADDL, BIN);
+	Serial.print(F("Chan BIN: "));  Serial.print(configuration.CHAN, DEC); Serial.print(" -> "); Serial.println(configuration.getChannelDescription());
+	Serial.println(F(" "));
+	Serial.print(F("SpeedParityBit BIN    : "));  Serial.print(configuration.SPED.uartParity, BIN);Serial.print(" -> "); Serial.println(configuration.SPED.getUARTParityDescription());
+	Serial.print(F("SpeedUARTDataRate BIN : "));  Serial.print(configuration.SPED.uartBaudRate, BIN);Serial.print(" -> "); Serial.println(configuration.SPED.getUARTBaudRate());
+	Serial.print(F("SpeedAirDataRate BIN  : "));  Serial.print(configuration.SPED.airDataRate, BIN);Serial.print(" -> "); Serial.println(configuration.SPED.getAirDataRate());
+
+	Serial.print(F("OptionTrans BIN       : "));  Serial.print(configuration.OPTION.fixedTransmission, BIN);Serial.print(" -> "); Serial.println(configuration.OPTION.getFixedTransmissionDescription());
+	Serial.print(F("OptionPullup BIN      : "));  Serial.print(configuration.OPTION.ioDriveMode, BIN);Serial.print(" -> "); Serial.println(configuration.OPTION.getIODroveModeDescription());
+	Serial.print(F("OptionWakeup BIN      : "));  Serial.print(configuration.OPTION.wirelessWakeupTime, BIN);Serial.print(" -> "); Serial.println(configuration.OPTION.getWirelessWakeUPTimeDescription());
+	Serial.print(F("OptionFEC BIN         : "));  Serial.print(configuration.OPTION.fec, BIN);Serial.print(" -> "); Serial.println(configuration.OPTION.getFECDescription());
+	Serial.print(F("OptionPower BIN       : "));  Serial.print(configuration.OPTION.transmissionPower, BIN);Serial.print(" -> "); Serial.println(configuration.OPTION.getTransmissionPowerDescription());
+
+	Serial.println("----------------------------------------");
+
+}
+void printLORAModuleInformation(struct ModuleInformation moduleInformation) {
+	Serial.println("----------------------------------------");
+	Serial.print(F("HEAD BIN: "));  Serial.print(moduleInformation.HEAD, BIN);Serial.print(" ");Serial.print(moduleInformation.HEAD, DEC);Serial.print(" ");Serial.println(moduleInformation.HEAD, HEX);
+
+	Serial.print(F("Freq.: "));  Serial.println(moduleInformation.frequency, HEX);
+	Serial.print(F("Version  : "));  Serial.println(moduleInformation.version, HEX);
+	Serial.print(F("Features : "));  Serial.println(moduleInformation.features, HEX);
+	Serial.println("----------------------------------------");
+
 }
