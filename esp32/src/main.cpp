@@ -1,11 +1,18 @@
 #include <Arduino.h>
-#include <SoftwareSerial.h>
+#include "DHT.h"   
+#include <SoftwareSerial.h>             
 
 #define DEBUG 1
+#define DHTPIN 4          // DHT Pin
+#define DHTTYPE DHT22
 #define SWSERIAL_TX 26
 #define SWSERIAL_RX 27
 #define SWSERIAL_BAUD 9600
 #define HWSERIAL_BAUD 115200 /*!< The baud rate for the output serial port */
+unsigned long int time_old = 0;
+int t_dht = 1000; //millis
+
+bool readDHT22(void);
 
 void readSMT100(void);
 struct smt100
@@ -16,6 +23,8 @@ struct smt100
    float voltage;
 };
 smt100 smt100_;
+
+DHT dht(DHTPIN, DHTTYPE);
 
 EspSoftwareSerial::UART sdiSerial;
 
@@ -31,11 +40,38 @@ void setup() {
   }
   while (!Serial)
     ;
+
+  dht.begin();
   delay(500);  // allow things to settle
 }
 
 void loop() {
-  readSMT100();
+  readDHT22();
+  //readSMT100();
+}
+
+bool readDHT22(void) {
+  bool read = false;
+  if ((millis()-time_old)>t_dht){
+    float h = dht.readHumidity();    // Lesen der Luftfeuchtigkeit und speichern in die Variable h
+    float t = dht.readTemperature(); // Lesen der Temperatur in °C und speichern in die Variable t
+    if (DEBUG){
+      Serial.print("Luftfeuchtigkeit:");
+      Serial.print(h);                  // Ausgeben der Luftfeuchtigkeit
+      Serial.print("%\t");              // Tabulator
+      Serial.print("Temperatur: ");
+      Serial.print(t);                  // Ausgeben der Temperatur
+      Serial.write("°");                // Schreiben des ° Zeichen
+      Serial.println("C");
+    }
+    time_old = millis();
+    /*********************( Überprüfen ob alles richtig Ausgelesen wurde )*********************/ 
+    if (isnan(h) || isnan(t)) {       
+      Serial.println("Fehler beim auslesen des Sensors!");
+      read = false;
+    }else read = true;
+  }
+  return read;
 }
 
 void readSMT100(void){
