@@ -5,17 +5,21 @@
 #define DEBUG 1
 #define SWSERIAL_TX 26
 #define SWSERIAL_RX 27
+#define DS1603L_TX 23
+#define DS1603L_RX 22
 #define MOSFET_PUMPE 33 
 #define FLOW 39
+#define FLOW_ON_OFF 32
 #define SWSERIAL_BAUD 9600
 #define HWSERIAL_BAUD 115200 /*!< The baud rate for the output serial port */
 
 void flow_handler(void);
 void readSMT100(void);
+void readFlow(void);
+void readDS1603L(void);
 
 const double mls_per_count = 3.0382;
 volatile unsigned long flow_counter = 0;
-unsigned long next_print = 0;
 unsigned long old_counter = 0;
 
 struct smt100
@@ -30,6 +34,7 @@ smt100 smt100_;
 EspSoftwareSerial::UART sdiSerial;
 EspSoftwareSerial::UART ds1603LSerial;
 
+DS1603L ds1603(ds1603LSerial);
 
 void setup() {
   // Hardwareserials
@@ -44,35 +49,77 @@ void setup() {
       delay (1000);
     }
   }
-  while (!Serial)
-    ;
+
+  ds1603LSerial.begin(SWSERIAL_BAUD, SWSERIAL_8N1, DS1603L_RX, DS1603L_TX, false);
+  if (!ds1603LSerial) { // If the object did not initialize, then its configuration is invalid
+    Serial.println("Invalid EspSoftwareSerial pin configuration, check config"); 
+    while (1) { // Don't continue with invalid configuration
+      delay (1000);
+    }
+  }
 
   pinMode(MOSFET_PUMPE, OUTPUT);
   pinMode(FLOW, INPUT);
+  pinMode(FLOW_ON_OFF, OUTPUT);
+
+  digitalWrite(FLOW_ON_OFF, HIGH);
   
   // Die Funktion flowb_handler() als Interrupthandler für steigende Flanken des Durchflusssensors festlegen
-  attachInterrupt(digitalPinToInterrupt(FLOW), flow_handler, RISING);
+  attachInterrupt(digitalPinToInterrupt(FLOW), flow_handler, FALLING);
+  
+  ds1603.begin();
+
   delay(500);  // allow things to settle
+  while (!Serial)
+    ;
 }
 
 void loop() {
   //readSMT100();
+  readFlow();
+  readDS1603L();
   //digitalWrite(MOSFET_PUMPE, !digitalRead(MOSFET_PUMPE));
+  //digitalWrite(FLOW_ON_OFF, HIGH);
 
-  if (millis() >= next_print)
-  {
-    unsigned long current_counter = flow_counter;
-    Serial.println((String) "Flow Counter: " + current_counter);
-    Serial.println((String) "Delta: " + (current_counter - old_counter));
-    old_counter = current_counter;
-    Serial.println((String) (flow_counter * mls_per_count) + " ml");
-    next_print = millis() + 2000;
-  }
+  
+  delay(2000);
 }
 
 void flow_handler() {
   flow_counter++;
 }
+
+void readFlow(void) {
+  unsigned long current_counter = flow_counter;
+  Serial.println((String) "Flow Counter: " + current_counter);
+  Serial.println((String) "Delta: " + (current_counter - old_counter));
+  old_counter = current_counter;
+  Serial.println((String) (flow_counter * mls_per_count) + " ml");
+}
+
+void readDS1603L(void) {
+  Serial.println(F("Starting reading."));
+  unsigned int reading = ds1603.readSensor();       // Call this as often or as little as you want - the sensor transmits every 1-2 seconds.
+  byte sensorStatus = ds1603.getStatus();           // Check the status of the sensor (not detected; checksum failed; reading success).
+  switch (sensorStatus) {                           // For possible values see DS1603L.h
+    case DS1603L_NO_SENSOR_DETECTED:                // No sensor detected: no valid transmission received for >10 seconds.
+      Serial.println(F("No sensor detected (yet). If no sensor after 1 second, check whether your connections are good."));
+      break;
+
+    case DS1603L_READING_CHECKSUM_FAIL:             // Checksum of the latest transmission failed.
+      Serial.print(F("Data received; checksum failed. Latest level reading: "));
+      Serial.print(reading);
+      Serial.println(F(" mm."));
+      break;
+
+    case DS1603L_READING_SUCCESS:                   // Latest reading was valid and received successfully.
+      Serial.print(F("Reading success. Water level: "));
+      Serial.print(reading);
+      Serial.println(F(" mm."));
+      break;
+  }
+}
+
 
 void readSMT100(void){
   String sdiSensorInfo = "<?M!>";
