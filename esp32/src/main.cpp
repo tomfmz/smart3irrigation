@@ -29,6 +29,7 @@ EspSoftwareSerial::UART ds1603LSerial;
 DS1603L ds1603(ds1603LSerial);
 
 LoRa_E32 e32ttl100(16,17,&Serial2,-1,-1,-1,UART_BPS_RATE_9600,SERIAL_8N1); // Arduino RX <-- e32 TX, Arduino TX --> e32 RX
+ResponseStatus lora_rs;
 
 TinyGPSPlus gps;
 
@@ -104,7 +105,9 @@ void setup() {
   dht.begin();
 
   //init of LoRA Modul
-	initLORA();
+	initLORA();  
+  lora_rs = e32ttl100.sendMessage("Hello, world?");
+  Serial.println(lora_rs.getResponseDescription());   // Check If there is some problem of succesfully send
 
   delay(500);  // allow things to settle
   while (!Serial) // Auf alle Serials warten?
@@ -112,22 +115,24 @@ void setup() {
 }
 
 void loop() {
-  unsigned long loopend = millis() + 10000;
-  readDHT22();
-  readSMT100();
-  readFlow();
-  readDS1603L();
+  // unsigned long loopend = millis() + 10000;
+  // readSMT100();
+  // readFlow();
+  // readDS1603L();
   //digitalWrite(MOSFET_PUMPE, !digitalRead(MOSFET_PUMPE));
   //digitalWrite(FLOW_ON_OFF, HIGH);
 
-  
-  while(millis() < loopend) {
-    while(Serial1.available() > 0)
-      gps.encode(Serial1.read());
-  }
-  Serial.println();
-
-  readGPS();
+  readDHT22();
+  Serial.println("Temp: " + String(dht22_.temp));
+  lora_rs = e32ttl100.sendMessage(String(dht22_.temp,2));
+  Serial.println(lora_rs.getResponseDescription());   // Check If there is some problem of succesfully send
+  delay(2000);
+  // while(millis() < loopend) {
+  //   while(Serial1.available() > 0)
+  //     gps.encode(Serial1.read());
+  // }
+  // Serial.println();
+  // readGPS();
 }
 
 bool readDHT22(void) {
@@ -310,9 +315,9 @@ void initLORA(void){
 	configuration.SPED.uartParity = MODE_00_8N1;
 
 	// Set configuration changed and set to not hold the configuration
-	ResponseStatus rs = e32ttl100.setConfiguration(configuration, WRITE_CFG_PWR_DWN_LOSE);
-	Serial.println(rs.getResponseDescription());
-	Serial.println(rs.code);
+	lora_rs = e32ttl100.setConfiguration(configuration, WRITE_CFG_PWR_DWN_LOSE);
+	Serial.println(lora_rs.getResponseDescription());
+	Serial.println(lora_rs.code);
 	printLORAParameters(configuration);
 
 	ResponseStructContainer cMi;
@@ -327,10 +332,6 @@ void initLORA(void){
 
 	c.close();
 	cMi.close();
-
-  rs = e32ttl100.sendMessage("Hello, world?");
-  // Check If there is some problem of succesfully send
-  Serial.println(rs.getResponseDescription());
 }
 
 void printLORAParameters(struct Configuration configuration) {
