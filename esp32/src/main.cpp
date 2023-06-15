@@ -20,20 +20,33 @@
 #define FLOW_ON_OFF 32
 #define SWSERIAL_BAUD 9600
 #define HWSERIAL_BAUD 115200 /*!< The baud rate for the output serial port */
+
+DHT dht(DHTPIN, DHTTYPE);
+
+EspSoftwareSerial::UART sdiSerial;
+
+EspSoftwareSerial::UART ds1603LSerial;
+DS1603L ds1603(ds1603LSerial);
+
+LoRa_E32 e32ttl100(16,17,&Serial2,-1,-1,-1,UART_BPS_RATE_9600,SERIAL_8N1); // Arduino RX <-- e32 TX, Arduino TX --> e32 RX
+
+TinyGPSPlus gps;
+
 unsigned long int time_old = 0;
 int t_dht = 1000; //millis
+const double mls_per_count = 3.0382;
+volatile unsigned long flow_counter = 0;
+unsigned long old_counter = 0;
 
 bool readDHT22(void);
-
 void flow_handler(void);
 void readSMT100(void);
 void readFlow(void);
 void readDS1603L(void);
 void readGPS(void);
-
-const double mls_per_count = 3.0382;
-volatile unsigned long flow_counter = 0;
-unsigned long old_counter = 0;
+void printLORAParameters(struct Configuration configuration);
+void printLORAModuleInformation(struct ModuleInformation moduleInformation);
+void initLORA(void);
 
 struct smt100
 {
@@ -43,19 +56,17 @@ struct smt100
    float voltage;
 };
 smt100 smt100_;
-
-DHT dht(DHTPIN, DHTTYPE);
-
-EspSoftwareSerial::UART sdiSerial;
-EspSoftwareSerial::UART ds1603LSerial;
-
-DS1603L ds1603(ds1603LSerial);
-LoRa_E32 e32ttl100(16,17,&Serial2,-1,-1,-1,UART_BPS_RATE_9600,SERIAL_8N1); // Arduino RX <-- e32 TX, Arduino TX --> e32 RX
-
-TinyGPSPlus gps;
-void printLORAParameters(struct Configuration configuration);
-void printLORAModuleInformation(struct ModuleInformation moduleInformation);
-void initLORA(void);
+struct dht22
+{
+   float temp;
+   float humidity;
+};
+dht22 dht22_;
+struct ds1603L
+{
+   float waterlvl;
+};
+ds1603L ds1603L_;
 
 void setup() {
   // Hardwareserials
@@ -122,20 +133,20 @@ void loop() {
 bool readDHT22(void) {
   bool read = false;
   if ((millis()-time_old)>t_dht){
-    float h = dht.readHumidity();    // Lesen der Luftfeuchtigkeit und speichern in die Variable h
-    float t = dht.readTemperature(); // Lesen der Temperatur in °C und speichern in die Variable t
+    dht22_.humidity = dht.readHumidity();    // Lesen der Luftfeuchtigkeit und speichern in die Variable h
+    dht22_.temp = dht.readTemperature(); // Lesen der Temperatur in °C und speichern in die Variable t
     if (DEBUG){
       Serial.print("Luftfeuchtigkeit:");
-      Serial.print(h);                  // Ausgeben der Luftfeuchtigkeit
+      Serial.print(dht22_.humidity);                  // Ausgeben der Luftfeuchtigkeit
       Serial.print("%\t");              // Tabulator
       Serial.print("Temperatur: ");
-      Serial.print(t);                  // Ausgeben der Temperatur
+      Serial.print(dht22_.temp);                  // Ausgeben der Temperatur
       Serial.write("°");                // Schreiben des ° Zeichen
       Serial.println("C");
     }
     time_old = millis();
     /*********************( Überprüfen ob alles richtig Ausgelesen wurde )*********************/ 
-    if (isnan(h) || isnan(t)) {       
+    if (isnan(dht22_.humidity) || isnan(dht22_.temp)) {       
       Serial.println("Fehler beim auslesen des Sensors!");
       read = false;
     }else read = true;
@@ -157,7 +168,7 @@ void readFlow(void) {
 
 void readDS1603L(void) {
   Serial.println(F("Starting reading."));
-  unsigned int reading = ds1603.readSensor();       // Call this as often or as little as you want - the sensor transmits every 1-2 seconds.
+  ds1603L_.waterlvl = ds1603.readSensor();       // Call this as often or as little as you want - the sensor transmits every 1-2 seconds.
   byte sensorStatus = ds1603.getStatus();           // Check the status of the sensor (not detected; checksum failed; reading success).
   switch (sensorStatus) {                           // For possible values see DS1603L.h
     case DS1603L_NO_SENSOR_DETECTED:                // No sensor detected: no valid transmission received for >10 seconds.
@@ -166,13 +177,13 @@ void readDS1603L(void) {
 
     case DS1603L_READING_CHECKSUM_FAIL:             // Checksum of the latest transmission failed.
       Serial.print(F("Data received; checksum failed. Latest level reading: "));
-      Serial.print(reading);
+      Serial.print(ds1603L_.waterlvl);
       Serial.println(F(" mm."));
       break;
 
     case DS1603L_READING_SUCCESS:                   // Latest reading was valid and received successfully.
       Serial.print(F("Reading success. Water level: "));
-      Serial.print(reading);
+      Serial.print(ds1603L_.waterlvl);
       Serial.println(F(" mm."));
       break;
   }
