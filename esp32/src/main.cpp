@@ -8,10 +8,10 @@
 #include <SPI.h>      
 
 #define DEBUG 1
-#define DHTPIN 4          // DHT Pin
+#define DHTPIN 27          // DHT Pin
 #define DHTTYPE DHT22
-#define SWSERIAL_TX 26
-#define SWSERIAL_RX 27
+#define NANO_SWSERIAL_TX 26
+#define NANO_SWSERIAL_RX 35
 #define DS1603L_TX 23
 #define DS1603L_RX 22
 #define GPS_TX 14
@@ -110,7 +110,7 @@ void setup() {
   Serial1.begin(9600, SERIAL_8N1, 12, 14); // funktioniert
   Serial2.begin(9600, SERIAL_8N1, 16, 17); // funktioniert
 
-  sdiSerial.begin(SWSERIAL_BAUD, SWSERIAL_8N1, SWSERIAL_RX, SWSERIAL_TX, false);
+  sdiSerial.begin(SWSERIAL_BAUD, SWSERIAL_8N1, NANO_SWSERIAL_RX,_S, false);
   if (!sdiSerial) { // If the object did not initialize, then its configuration is invalid
     Serial.println("Invalid EspSoftwareSerial pin configuration, check config"); 
     while (1) { // Don't continue with invalid configuration
@@ -140,12 +140,12 @@ void setup() {
   dht.begin();
 
   // LMIC init
-  os_init();
+ // os_init();
   // Reset the MAC state. Session and pending data transfers will be discarded.
-  LMIC_reset();
+  //LMIC_reset();
 
   // Start job (sending automatically starts OTAA too)
-  do_send(&sendjob);
+  //do_send(&sendjob);
 
   delay(500);  // allow things to settle
   while (!Serial) // Auf alle Serials warten?
@@ -155,13 +155,13 @@ void setup() {
 void loop() {
   // unsigned long loopend = millis() + 10000;
   readDHT22();
-  // readSMT100();
+  readSMT100();
   // readFlow();
   // readDS1603L();
   //digitalWrite(MOSFET_PUMPE, !digitalRead(MOSFET_PUMPE));
   //digitalWrite(FLOW_ON_OFF, HIGH);
 
-  os_runloop_once();
+  //os_runloop_once();
   
   // while(millis() < loopend) {
   //   while(Serial1.available() > 0)
