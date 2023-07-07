@@ -21,6 +21,11 @@
 #define FLOW_ON_OFF 32
 #define SWSERIAL_BAUD 9600
 #define HWSERIAL_BAUD 115200 /*!< The baud rate for the output serial port */
+#define LORA_NSS 22
+#define LORA_RST 21
+#define LORA_DIO0 5
+#define LORA_DIO1 2
+#define LORA_DIO2 15
 
 // How often to send a packet. Note that this sketch bypasses the normal
 // LMIC duty cycle limiting, so when you change anything in this sketch
@@ -34,8 +39,8 @@ DHT dht(DHTPIN, DHTTYPE);
 
 EspSoftwareSerial::UART sdiSerial;
 
-// EspSoftwareSerial::UART ds1603LSerial;
-// DS1603L ds1603(ds1603LSerial);
+EspSoftwareSerial::UART ds1603LSerial;
+DS1603L ds1603(ds1603LSerial);
 
 TinyGPSPlus gps;
 
@@ -55,33 +60,29 @@ void readGPS(void);
 void do_send(osjob_t* j);
 void onEvent (ev_t ev);
 
-static uint8_t mydata[] = "Hello, world!";
+static uint8_t mydata[3];
 static osjob_t sendjob;
 
-// This EUI must be in little-endian format, so least-significant-byte
-// first. When copying an EUI from ttnctl output, this means to reverse
-// the bytes. For TTN issued EUIs the last bytes should be 0xD5, 0xB3,
-// 0x70.
-static const u1_t PROGMEM APPEUI[8]={ 0x3F, 0x97, 0x2B, 0x00, 0x00, 0x00, 0x00, 0x00 };
+static const u1_t PROGMEM APPEUI[8]={0x00, 0x12, 0x25, 0xFF, 0xFF, 0x41, 0x40, 0xA8}; //a84041ffff251200 Gateway id
 void os_getArtEui (u1_t* buf) { memcpy_P(buf, APPEUI, 8);}
- 
-// This should also be in little endian format, see above.
-static const u1_t PROGMEM DEVEUI[8]={ 0xCF, 0xF5, 0x81, 0x20, 0xE1, 0x37, 0x45, 0x96 };
+
+static const u1_t PROGMEM DEVEUI[8]={ 0xCF, 0xF5, 0x81, 0x20, 0xE1, 0x37, 0x45, 0x96 }; //964537e12081f5cf Devui vom ESP
 void os_getDevEui (u1_t* buf) { memcpy_P(buf, DEVEUI, 8);}
  
-// This key should be in big endian format (or, since it is not really a
-// number but a block of memory, endianness does not really apply). In
-// practice, a key taken from ttnctl can be copied as-is.
-// The key shown here is the semtech default key.
-static const u1_t PROGMEM APPKEY[16] = { 0x2A, 0x18, 0xAA, 0x25, 0x50, 0x27, 0x49, 0x33, 0x8C, 0xA0, 0x48, 0x7F, 0xB8, 0xBD, 0x6B, 0x2E };
+static const u1_t PROGMEM APPKEY[16] = { 0x70, 0xBE, 0x53, 0x6E, 0x52, 0xC3, 0xBE, 0x45, 0x0C, 0x0F, 0x88, 0xF5, 0x12, 0x0F, 0x50, 0x8B}; 
 void os_getDevKey (u1_t* buf) {  memcpy_P(buf, APPKEY, 16);}
+
+long previousMillis = 0;
+long interval = 60000;  //send interval when charge controller active (CS > 0)
+long interval2 = 30000;  //send interval when charge controller inactive (CS == 0)
+
 
 // Pin mapping
 const lmic_pinmap lmic_pins = {
-    .nss = 22,
+    .nss = LORA_NSS,
     .rxtx = LMIC_UNUSED_PIN,
-    .rst = 21,
-    .dio = {5, 2, 15},
+    .rst = LORA_RST,
+    .dio = {LORA_DIO0, LORA_DIO1, LORA_DIO2},
 };
 //---------------------------------------------
 struct smt100
@@ -110,7 +111,7 @@ void setup() {
   Serial1.begin(9600, SERIAL_8N1, 12, 14); // funktioniert
   Serial2.begin(9600, SERIAL_8N1, 16, 17); // funktioniert
 
-  sdiSerial.begin(SWSERIAL_BAUD, SWSERIAL_8N1, NANO_SWSERIAL_RX,_S, false);
+  // sdiSerial.begin(SWSERIAL_BAUD, SWSERIAL_8N1, NANO_SWSERIAL_RX,_S, false);
   if (!sdiSerial) { // If the object did not initialize, then its configuration is invalid
     Serial.println("Invalid EspSoftwareSerial pin configuration, check config"); 
     while (1) { // Don't continue with invalid configuration
@@ -118,13 +119,13 @@ void setup() {
     }
   }
 
-  // ds1603LSerial.begin(SWSERIAL_BAUD, SWSERIAL_8N1, DS1603L_RX, DS1603L_TX, false);
-  // if (!ds1603LSerial) { // If the object did not initialize, then its configuration is invalid
-  //   Serial.println("Invalid EspSoftwareSerial pin configuration, check config"); 
-  //   while (1) { // Don't continue with invalid configuration
-  //     delay (1000);
-  //   }
-  // }
+  ds1603LSerial.begin(SWSERIAL_BAUD, SWSERIAL_8N1, DS1603L_RX, DS1603L_TX, false);
+  if (!ds1603LSerial) { // If the object did not initialize, then its configuration is invalid
+    Serial.println("Invalid EspSoftwareSerial pin configuration, check config"); 
+    while (1) { // Don't continue with invalid configuration
+      delay (1000);
+    }
+  }
 
   pinMode(MOSFET_PUMPE, OUTPUT);
   pinMode(FLOW, INPUT);
@@ -135,17 +136,26 @@ void setup() {
   // Die Funktion flowb_handler() als Interrupthandler für steigende Flanken des Durchflusssensors festlegen
   attachInterrupt(digitalPinToInterrupt(FLOW), flow_handler, FALLING);
   
-  // ds1603.begin();
+  ds1603.begin();
   
   dht.begin();
 
   // LMIC init
- // os_init();
+  os_init();
   // Reset the MAC state. Session and pending data transfers will be discarded.
-  //LMIC_reset();
+  LMIC_reset();
+  //LMIC specific parameters
+  LMIC_setAdrMode(0);
+  LMIC_setLinkCheckMode(0);
+  LMIC_setClockError(MAX_CLOCK_ERROR * 1 / 100);
+
+  //LORA Testdata
+  mydata[0] = 65;
+  mydata[1] = 23;
 
   // Start job (sending automatically starts OTAA too)
-  //do_send(&sendjob);
+  previousMillis = millis();
+  do_send(&sendjob);
 
   delay(500);  // allow things to settle
   while (!Serial) // Auf alle Serials warten?
@@ -153,22 +163,28 @@ void setup() {
 }
 
 void loop() {
-  // unsigned long loopend = millis() + 10000;
+  unsigned long loopend = millis() + 10000;
   readDHT22();
   readSMT100();
-  // readFlow();
-  // readDS1603L();
-  //digitalWrite(MOSFET_PUMPE, !digitalRead(MOSFET_PUMPE));
-  //digitalWrite(FLOW_ON_OFF, HIGH);
+  readFlow();
+  readDS1603L();
+  digitalWrite(MOSFET_PUMPE, !digitalRead(MOSFET_PUMPE));
+  digitalWrite(FLOW_ON_OFF, HIGH);
 
-  //os_runloop_once();
+  os_runloop_once();
+  if (millis() - previousMillis > interval2) {
+    do_send(&sendjob);
+    previousMillis = millis();
+    mydata[0]++;
+    mydata[1]++;
+  }
   
-  // while(millis() < loopend) {
-  //   while(Serial1.available() > 0)
-  //     gps.encode(Serial1.read());
-  // }
-  // Serial.println();
-  // readGPS();
+  while(millis() < loopend) {
+    while(Serial1.available() > 0)
+      gps.encode(Serial1.read());
+  }
+  Serial.println();
+  readGPS();
 }
 
 bool readDHT22(void) {
@@ -207,28 +223,28 @@ void readFlow(void) {
   Serial.println((String) (flow_counter * mls_per_count) + " ml");
 }
 
-// void readDS1603L(void) {
-//   Serial.println(F("Starting reading."));
-//   ds1603L_.waterlvl = ds1603.readSensor();       // Call this as often or as little as you want - the sensor transmits every 1-2 seconds.
-//   byte sensorStatus = ds1603.getStatus();           // Check the status of the sensor (not detected; checksum failed; reading success).
-//   switch (sensorStatus) {                           // For possible values see DS1603L.h
-//     case DS1603L_NO_SENSOR_DETECTED:                // No sensor detected: no valid transmission received for >10 seconds.
-//       Serial.println(F("No sensor detected (yet). If no sensor after 1 second, check whether your connections are good."));
-//       break;
+void readDS1603L(void) {
+  Serial.println(F("Starting reading."));
+  ds1603L_.waterlvl = ds1603.readSensor();       // Call this as often or as little as you want - the sensor transmits every 1-2 seconds.
+  byte sensorStatus = ds1603.getStatus();           // Check the status of the sensor (not detected; checksum failed; reading success).
+  switch (sensorStatus) {                           // For possible values see DS1603L.h
+    case DS1603L_NO_SENSOR_DETECTED:                // No sensor detected: no valid transmission received for >10 seconds.
+      Serial.println(F("No sensor detected (yet). If no sensor after 1 second, check whether your connections are good."));
+      break;
 
-//     case DS1603L_READING_CHECKSUM_FAIL:             // Checksum of the latest transmission failed.
-//       Serial.print(F("Data received; checksum failed. Latest level reading: "));
-//       Serial.print(ds1603L_.waterlvl);
-//       Serial.println(F(" mm."));
-//       break;
+    case DS1603L_READING_CHECKSUM_FAIL:             // Checksum of the latest transmission failed.
+      Serial.print(F("Data received; checksum failed. Latest level reading: "));
+      Serial.print(ds1603L_.waterlvl);
+      Serial.println(F(" mm."));
+      break;
 
-//     case DS1603L_READING_SUCCESS:                   // Latest reading was valid and received successfully.
-//       Serial.print(F("Reading success. Water level: "));
-//       Serial.print(ds1603L_.waterlvl);
-//       Serial.println(F(" mm."));
-//       break;
-//   }
-// }
+    case DS1603L_READING_SUCCESS:                   // Latest reading was valid and received successfully.
+      Serial.print(F("Reading success. Water level: "));
+      Serial.print(ds1603L_.waterlvl);
+      Serial.println(F(" mm."));
+      break;
+  }
+}
 
 
 void readSMT100(void){
