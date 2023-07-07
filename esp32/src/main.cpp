@@ -37,7 +37,7 @@
 
 DHT dht(DHTPIN, DHTTYPE);
 
-EspSoftwareSerial::UART sdiSerial;
+EspSoftwareSerial::UART smtSerial;
 
 EspSoftwareSerial::UART ds1603LSerial;
 DS1603L ds1603(ds1603LSerial);
@@ -76,7 +76,6 @@ long previousMillis = 0;
 long interval = 60000;  //send interval when charge controller active (CS > 0)
 long interval2 = 30000;  //send interval when charge controller inactive (CS == 0)
 
-
 // Pin mapping
 const lmic_pinmap lmic_pins = {
     .nss = LORA_NSS,
@@ -111,8 +110,8 @@ void setup() {
   Serial1.begin(9600, SERIAL_8N1, 12, 14); // funktioniert
   Serial2.begin(9600, SERIAL_8N1, 16, 17); // funktioniert
 
-  sdiSerial.begin(SWSERIAL_BAUD, SWSERIAL_8N1, NANO_SWSERIAL_RX,_S, false);
-  if (!sdiSerial) { // If the object did not initialize, then its configuration is invalid
+  smtSerial.begin(SWSERIAL_BAUD, SWSERIAL_8N1, NANO_SWSERIAL_RX,_S, false);
+  if (!smtSerial) { // If the object did not initialize, then its configuration is invalid
     Serial.println("Invalid EspSoftwareSerial pin configuration, check config"); 
     while (1) { // Don't continue with invalid configuration
       delay (1000);
@@ -248,8 +247,8 @@ void readDS1603L(void) {
 
 
 void readSMT100(void){
-  String sdiSensorInfo = "<?M!>";
-  String sdiMeasure = "<?D0!>";
+  String SensorInfo = "<?M!>";
+  String Measure = "<?D0!>";
   char c = ' ';
   const int BUFFER_SIZE = 50;
   char buf[BUFFER_SIZE];
@@ -259,17 +258,17 @@ void readSMT100(void){
   String stm100temp_s;
   String stm100moisture_s;
   String stm100voltage_s;
-  sdiSerial.print(sdiSensorInfo);
+  smtSerial.print(SensorInfo);
   delay(300);                    // wait a while for a response
-  while (sdiSerial.available()) {  // write the response to the screen
-    c = sdiSerial.read();
+  while (smtSerial.available()) {  // write the response to the screen
+    c = smtSerial.read();
   }
   delay(2000);  // print again in three seconds
-  sdiSerial.print(sdiMeasure);
+  smtSerial.print(Measure);
   delay(300);                    // wait a while for a response
-  while (sdiSerial.available()) {  // write the response to the screen
+  while (smtSerial.available()) {  // write the response to the screen
     // read the incoming bytes:
-    int rlen = sdiSerial.readBytes(buf, BUFFER_SIZE);
+    int rlen = smtSerial.readBytes(buf, BUFFER_SIZE);
     // prints the received data   
     for (int i = 0; i < rlen; i++) {
       if (buf[i] == '+') j++;
@@ -292,12 +291,9 @@ void readSMT100(void){
   smt100_.voltage = stm100voltage_s.toFloat();
 }
 
-void readGPS()
-{
+void readGPS(){
   String gpsLocation = "";
-
-  if (gps.date.isValid() && (gps.date.age() <= 1500))
-  {
+  if (gps.date.isValid() && (gps.date.age() <= 1500)){
     if (gps.time.hour() < 10)
       gpsLocation += "0";
     gpsLocation += String (gps.time.hour());
@@ -310,33 +306,22 @@ void readGPS()
       gpsLocation += "0";
     gpsLocation += String (gps.time.second());
     gpsLocation += (",");
-  }
-
-  else
+  }else
     gpsLocation += "NO_VALID_TIMESTAMP,";
-
-  if (gps.location.isValid())
-  {
+  if (gps.location.isValid()){
     gpsLocation += String (gps.speed.kmph());
     gpsLocation += (",");
     gpsLocation += String (gps.location.lat(), 6);
     gpsLocation += (",");
     gpsLocation += String (gps.location.lng(), 6);
     gpsLocation += (",");
-  }
-
-  else
-  {
+  }else{
     gpsLocation += "NO_VALID_SPEED,NO_VALID_LAT,NOV_VALID_LONG,";
-
   }
-
   if (gps.course.isValid())
     gpsLocation += String (gps.course.deg());
   else
     gpsLocation += "NO_VALID_COURSE";
-
-
   Serial.println(gpsLocation);
 }
 
