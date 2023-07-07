@@ -111,7 +111,7 @@ void setup() {
   Serial1.begin(9600, SERIAL_8N1, 12, 14); // funktioniert
   Serial2.begin(9600, SERIAL_8N1, 16, 17); // funktioniert
 
-  // sdiSerial.begin(SWSERIAL_BAUD, SWSERIAL_8N1, NANO_SWSERIAL_RX,_S, false);
+  sdiSerial.begin(SWSERIAL_BAUD, SWSERIAL_8N1, NANO_SWSERIAL_RX,_S, false);
   if (!sdiSerial) { // If the object did not initialize, then its configuration is invalid
     Serial.println("Invalid EspSoftwareSerial pin configuration, check config"); 
     while (1) { // Don't continue with invalid configuration
