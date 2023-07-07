@@ -60,7 +60,7 @@ void readGPS(void);
 void do_send(osjob_t* j);
 void onEvent (ev_t ev);
 
-static uint8_t mydata[3];
+static uint8_t lora_data[7];
 static osjob_t sendjob;
 
 static const u1_t PROGMEM APPEUI[8]={0x00, 0x12, 0x25, 0xFF, 0xFF, 0x41, 0x40, 0xA8}; //a84041ffff251200 Gateway id
@@ -100,9 +100,15 @@ struct dht22
 dht22 dht22_;
 struct ds1603L
 {
-   float waterlvl;
+   uint16_t waterlvl;
 };
 ds1603L ds1603L_;
+
+struct flowsens
+{
+   uint16_t waterflow;
+};
+flowsens flowsens_;
 
 void setup() {
   // Hardwareserials
@@ -148,10 +154,6 @@ void setup() {
   LMIC_setLinkCheckMode(0);
   LMIC_setClockError(MAX_CLOCK_ERROR * 1 / 100);
 
-  //LORA Testdata
-  mydata[0] = 65;
-  mydata[1] = 23;
-
   // Start job (sending automatically starts OTAA too)
   previousMillis = millis();
   do_send(&sendjob);
@@ -164,9 +166,17 @@ void setup() {
 void loop() {
   unsigned long loopend = millis() + 10000;
   readDHT22();
+  lora_data[0] = (uint8_t)dht22_.humidity;
+  lora_data[1] = (uint8_t)dht22_.temp;
   readSMT100();
+  lora_data[2] = (uint8_t)smt100_.volwater;
+  lora_data[3] = (uint8_t)(smt100_.voltage*10);
   readFlow();
+  lora_data[4] = highByte(flowsens_.waterflow);
+  lora_data[5] = lowByte(flowsens_.waterflow);
   readDS1603L();
+  lora_data[4] = highByte(ds1603L_.waterlvl);
+  lora_data[5] = lowByte(ds1603L_.waterlvl);
   digitalWrite(MOSFET_PUMPE, !digitalRead(MOSFET_PUMPE));
   digitalWrite(FLOW_ON_OFF, HIGH);
 
@@ -174,8 +184,6 @@ void loop() {
   if (millis() - previousMillis > interval2) {
     do_send(&sendjob);
     previousMillis = millis();
-    mydata[0]++;
-    mydata[1]++;
   }
   
   while(millis() < loopend) {
@@ -219,7 +227,8 @@ void readFlow(void) {
   Serial.println((String) "Flow Counter: " + current_counter);
   Serial.println((String) "Delta: " + (current_counter - old_counter));
   old_counter = current_counter;
-  Serial.println((String) (flow_counter * mls_per_count) + " ml");
+  flowsens_.waterflow = flow_counter * mls_per_count;
+  Serial.println((String) (flowsens_.waterflow) + " ml");
 }
 
 void readDS1603L(void) {
@@ -401,7 +410,7 @@ void do_send(osjob_t* j){
         Serial.println(F("OP_TXRXPEND, not sending"));
     } else {
         // Prepare upstream data transmission at the next possible time.
-        LMIC_setTxData2(1, mydata, sizeof(mydata)-1, 0);
+        LMIC_setTxData2(1, lora_data, sizeof(lora_data)-1, 0);
         Serial.println(F("Packet queued"));
     }
     // Next TX is scheduled after TX_COMPLETE event.
