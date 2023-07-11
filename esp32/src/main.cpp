@@ -3,14 +3,15 @@
 #include <SoftwareSerial.h>
 #include <DS1603L.h>
 #include <TinyGPSPlus.h>
-#define FREQUENCY_868
-#include "LoRa_E32.h"       
+#include <lmic.h>
+#include <hal/hal.h>
+#include <SPI.h>      
 
 #define DEBUG 1
-#define DHTPIN 4          // DHT Pin
+#define DHTPIN 27          // DHT Pin
 #define DHTTYPE DHT22
-#define SWSERIAL_TX 26
-#define SWSERIAL_RX 27
+#define NANO_SWSERIAL_TX 26
+#define NANO_SWSERIAL_RX 35
 #define DS1603L_TX 23
 #define DS1603L_RX 22
 #define GPS_TX 14
@@ -20,15 +21,26 @@
 #define FLOW_ON_OFF 32
 #define SWSERIAL_BAUD 9600
 #define HWSERIAL_BAUD 115200 /*!< The baud rate for the output serial port */
+#define LORA_NSS 22
+#define LORA_RST 21
+#define LORA_DIO0 5
+#define LORA_DIO1 2
+#define LORA_DIO2 15
+
+// How often to send a packet. Note that this sketch bypasses the normal
+// LMIC duty cycle limiting, so when you change anything in this sketch
+// (payload length, frequency, spreading factor), be sure to check if
+// this interval should not also be increased.
+// See this spreadsheet for an easy airtime and duty cycle calculator:
+// https://docs.google.com/spreadsheets/d/1voGAtQAjC1qBmaVuP1ApNKs1ekgUjavHuVQIXyYSvNc
+#define TX_INTERVAL 2000
 
 DHT dht(DHTPIN, DHTTYPE);
 
-EspSoftwareSerial::UART sdiSerial;
+EspSoftwareSerial::UART smtSerial;
 
 EspSoftwareSerial::UART ds1603LSerial;
 DS1603L ds1603(ds1603LSerial);
-
-LoRa_E32 e32ttl100(16,17,&Serial2,-1,-1,-1,UART_BPS_RATE_9600,SERIAL_8N1); // Arduino RX <-- e32 TX, Arduino TX --> e32 RX
 
 TinyGPSPlus gps;
 
@@ -38,16 +50,40 @@ const double mls_per_count = 3.0382;
 volatile unsigned long flow_counter = 0;
 unsigned long old_counter = 0;
 
-bool readDHT22(void);
 void flow_handler(void);
-void readSMT100(void);
 void readFlow(void);
+bool readDHT22(void);
+void readSMT100(void);
 void readDS1603L(void);
 void readGPS(void);
-void printLORAParameters(struct Configuration configuration);
-void printLORAModuleInformation(struct ModuleInformation moduleInformation);
-void initLORA(void);
+//--------------------LoRaWAN-------------------
+void do_send(osjob_t* j);
+void onEvent (ev_t ev);
 
+static uint8_t lora_data[7];
+static osjob_t sendjob;
+
+static const u1_t PROGMEM APPEUI[8]={0x00, 0x12, 0x25, 0xFF, 0xFF, 0x41, 0x40, 0xA8}; //a84041ffff251200 Gateway id
+void os_getArtEui (u1_t* buf) { memcpy_P(buf, APPEUI, 8);}
+
+static const u1_t PROGMEM DEVEUI[8]={ 0xCF, 0xF5, 0x81, 0x20, 0xE1, 0x37, 0x45, 0x96 }; //964537e12081f5cf Devui vom ESP
+void os_getDevEui (u1_t* buf) { memcpy_P(buf, DEVEUI, 8);}
+ 
+static const u1_t PROGMEM APPKEY[16] = { 0x70, 0xBE, 0x53, 0x6E, 0x52, 0xC3, 0xBE, 0x45, 0x0C, 0x0F, 0x88, 0xF5, 0x12, 0x0F, 0x50, 0x8B}; 
+void os_getDevKey (u1_t* buf) {  memcpy_P(buf, APPKEY, 16);}
+
+long previousMillis = 0;
+long interval = 60000;  //send interval when charge controller active (CS > 0)
+long interval2 = 30000;  //send interval when charge controller inactive (CS == 0)
+
+// Pin mapping
+const lmic_pinmap lmic_pins = {
+    .nss = LORA_NSS,
+    .rxtx = LMIC_UNUSED_PIN,
+    .rst = LORA_RST,
+    .dio = {LORA_DIO0, LORA_DIO1, LORA_DIO2},
+};
+//---------------------------------------------
 struct smt100
 {
    float permittivity;
@@ -64,9 +100,15 @@ struct dht22
 dht22 dht22_;
 struct ds1603L
 {
-   float waterlvl;
+   uint16_t waterlvl;
 };
 ds1603L ds1603L_;
+
+struct flowsens
+{
+   uint16_t waterflow;
+};
+flowsens flowsens_;
 
 void setup() {
   // Hardwareserials
@@ -74,8 +116,8 @@ void setup() {
   Serial1.begin(9600, SERIAL_8N1, 12, 14); // funktioniert
   Serial2.begin(9600, SERIAL_8N1, 16, 17); // funktioniert
 
-  sdiSerial.begin(SWSERIAL_BAUD, SWSERIAL_8N1, SWSERIAL_RX, SWSERIAL_TX, false);
-  if (!sdiSerial) { // If the object did not initialize, then its configuration is invalid
+  smtSerial.begin(SWSERIAL_BAUD, SWSERIAL_8N1, NANO_SWSERIAL_RX,_S, false);
+  if (!smtSerial) { // If the object did not initialize, then its configuration is invalid
     Serial.println("Invalid EspSoftwareSerial pin configuration, check config"); 
     while (1) { // Don't continue with invalid configuration
       delay (1000);
@@ -103,8 +145,18 @@ void setup() {
   
   dht.begin();
 
-  //init of LoRA Modul
-	initLORA();
+  // LMIC init
+  os_init();
+  // Reset the MAC state. Session and pending data transfers will be discarded.
+  LMIC_reset();
+  //LMIC specific parameters
+  LMIC_setAdrMode(0);
+  LMIC_setLinkCheckMode(0);
+  LMIC_setClockError(MAX_CLOCK_ERROR * 1 / 100);
+
+  // Start job (sending automatically starts OTAA too)
+  previousMillis = millis();
+  do_send(&sendjob);
 
   delay(500);  // allow things to settle
   while (!Serial) // Auf alle Serials warten?
@@ -114,19 +166,31 @@ void setup() {
 void loop() {
   unsigned long loopend = millis() + 10000;
   readDHT22();
+  lora_data[0] = (uint8_t)dht22_.humidity;
+  lora_data[1] = (uint8_t)dht22_.temp;
   readSMT100();
+  lora_data[2] = (uint8_t)smt100_.volwater;
+  lora_data[3] = (uint8_t)(smt100_.voltage*10);
   readFlow();
+  lora_data[4] = highByte(flowsens_.waterflow);
+  lora_data[5] = lowByte(flowsens_.waterflow);
   readDS1603L();
-  //digitalWrite(MOSFET_PUMPE, !digitalRead(MOSFET_PUMPE));
-  //digitalWrite(FLOW_ON_OFF, HIGH);
+  lora_data[4] = highByte(ds1603L_.waterlvl);
+  lora_data[5] = lowByte(ds1603L_.waterlvl);
+  digitalWrite(MOSFET_PUMPE, !digitalRead(MOSFET_PUMPE));
+  digitalWrite(FLOW_ON_OFF, HIGH);
 
+  os_runloop_once();
+  if (millis() - previousMillis > interval2) {
+    do_send(&sendjob);
+    previousMillis = millis();
+  }
   
   while(millis() < loopend) {
     while(Serial1.available() > 0)
       gps.encode(Serial1.read());
   }
   Serial.println();
-
   readGPS();
 }
 
@@ -163,7 +227,8 @@ void readFlow(void) {
   Serial.println((String) "Flow Counter: " + current_counter);
   Serial.println((String) "Delta: " + (current_counter - old_counter));
   old_counter = current_counter;
-  Serial.println((String) (flow_counter * mls_per_count) + " ml");
+  flowsens_.waterflow = flow_counter * mls_per_count;
+  Serial.println((String) (flowsens_.waterflow) + " ml");
 }
 
 void readDS1603L(void) {
@@ -191,8 +256,8 @@ void readDS1603L(void) {
 
 
 void readSMT100(void){
-  String sdiSensorInfo = "<?M!>";
-  String sdiMeasure = "<?D0!>";
+  String SensorInfo = "<?M!>";
+  String Measure = "<?D0!>";
   char c = ' ';
   const int BUFFER_SIZE = 50;
   char buf[BUFFER_SIZE];
@@ -202,17 +267,17 @@ void readSMT100(void){
   String stm100temp_s;
   String stm100moisture_s;
   String stm100voltage_s;
-  sdiSerial.print(sdiSensorInfo);
+  smtSerial.print(SensorInfo);
   delay(300);                    // wait a while for a response
-  while (sdiSerial.available()) {  // write the response to the screen
-    c = sdiSerial.read();
+  while (smtSerial.available()) {  // write the response to the screen
+    c = smtSerial.read();
   }
   delay(2000);  // print again in three seconds
-  sdiSerial.print(sdiMeasure);
+  smtSerial.print(Measure);
   delay(300);                    // wait a while for a response
-  while (sdiSerial.available()) {  // write the response to the screen
+  while (smtSerial.available()) {  // write the response to the screen
     // read the incoming bytes:
-    int rlen = sdiSerial.readBytes(buf, BUFFER_SIZE);
+    int rlen = smtSerial.readBytes(buf, BUFFER_SIZE);
     // prints the received data   
     for (int i = 0; i < rlen; i++) {
       if (buf[i] == '+') j++;
@@ -235,12 +300,9 @@ void readSMT100(void){
   smt100_.voltage = stm100voltage_s.toFloat();
 }
 
-void readGPS()
-{
+void readGPS(){
   String gpsLocation = "";
-
-  if (gps.date.isValid() && (gps.date.age() <= 1500))
-  {
+  if (gps.date.isValid() && (gps.date.age() <= 1500)){
     if (gps.time.hour() < 10)
       gpsLocation += "0";
     gpsLocation += String (gps.time.hour());
@@ -253,115 +315,103 @@ void readGPS()
       gpsLocation += "0";
     gpsLocation += String (gps.time.second());
     gpsLocation += (",");
-  }
-
-  else
+  }else
     gpsLocation += "NO_VALID_TIMESTAMP,";
-
-  if (gps.location.isValid())
-  {
+  if (gps.location.isValid()){
     gpsLocation += String (gps.speed.kmph());
     gpsLocation += (",");
     gpsLocation += String (gps.location.lat(), 6);
     gpsLocation += (",");
     gpsLocation += String (gps.location.lng(), 6);
     gpsLocation += (",");
-  }
-
-  else
-  {
+  }else{
     gpsLocation += "NO_VALID_SPEED,NO_VALID_LAT,NOV_VALID_LONG,";
-
   }
-
   if (gps.course.isValid())
     gpsLocation += String (gps.course.deg());
   else
     gpsLocation += "NO_VALID_COURSE";
-
-
   Serial.println(gpsLocation);
 }
 
-void initLORA(void){
-  // Startup all pins and UART
-	e32ttl100.begin();
-
-	ResponseStructContainer c;
-	c = e32ttl100.getConfiguration();
-	// It's important get configuration pointer before all other operation
-	Configuration configuration = *(Configuration*) c.data;
-	Serial.println(c.status.getResponseDescription());
-	Serial.println(c.status.code);
-
-	printLORAParameters(configuration);
-  configuration.ADDL = 0x0;
-	configuration.ADDH = 0x1;
-	configuration.CHAN = 0x19;
-
-	configuration.OPTION.fec = FEC_0_OFF;
-	configuration.OPTION.fixedTransmission = FT_TRANSPARENT_TRANSMISSION;
-	configuration.OPTION.ioDriveMode = IO_D_MODE_PUSH_PULLS_PULL_UPS;
-	configuration.OPTION.transmissionPower = POWER_17;
-	configuration.OPTION.wirelessWakeupTime = WAKE_UP_1250;
-
-	configuration.SPED.airDataRate = AIR_DATA_RATE_011_48;
-	configuration.SPED.uartBaudRate = UART_BPS_115200;
-	configuration.SPED.uartParity = MODE_00_8N1;
-
-	// Set configuration changed and set to not hold the configuration
-	ResponseStatus rs = e32ttl100.setConfiguration(configuration, WRITE_CFG_PWR_DWN_LOSE);
-	Serial.println(rs.getResponseDescription());
-	Serial.println(rs.code);
-	printLORAParameters(configuration);
-
-	ResponseStructContainer cMi;
-	cMi = e32ttl100.getModuleInformation();
-	// It's important get information pointer before all other operation
-	ModuleInformation mi = *(ModuleInformation*)cMi.data;
-
-	Serial.println(cMi.status.getResponseDescription());
-	Serial.println(cMi.status.code);
-
-	printLORAModuleInformation(mi);
-
-	c.close();
-	cMi.close();
-
-  rs = e32ttl100.sendMessage("Hello, world?");
-  // Check If there is some problem of succesfully send
-  Serial.println(rs.getResponseDescription());
+void onEvent (ev_t ev) {
+    Serial.print(os_getTime());
+    Serial.print(": ");
+    switch(ev) {
+        case EV_SCAN_TIMEOUT:
+            Serial.println(F("EV_SCAN_TIMEOUT"));
+            break;
+        case EV_BEACON_FOUND:
+            Serial.println(F("EV_BEACON_FOUND"));
+            break;
+        case EV_BEACON_MISSED:
+            Serial.println(F("EV_BEACON_MISSED"));
+            break;
+        case EV_BEACON_TRACKED:
+            Serial.println(F("EV_BEACON_TRACKED"));
+            break;
+        case EV_JOINING:
+            Serial.println(F("EV_JOINING"));
+            break;
+        case EV_JOINED:
+            Serial.println(F("EV_JOINED"));
+ 
+            // Disable link check validation (automatically enabled
+            // during join, but not supported by TTN at this time).
+            LMIC_setLinkCheckMode(0);
+            break;
+        case EV_RFU1:
+            Serial.println(F("EV_RFU1"));
+            break;
+        case EV_JOIN_FAILED:
+            Serial.println(F("EV_JOIN_FAILED"));
+            break;
+        case EV_REJOIN_FAILED:
+            Serial.println(F("EV_REJOIN_FAILED"));
+            break;
+            break;
+        case EV_TXCOMPLETE:
+            Serial.println(F("EV_TXCOMPLETE (includes waiting for RX windows)"));
+            if (LMIC.txrxFlags & TXRX_ACK)
+              Serial.println(F("Received ack"));
+            if (LMIC.dataLen) {
+              Serial.println(F("Received "));
+              Serial.println(LMIC.dataLen);
+              Serial.println(F(" bytes of payload"));
+            }
+            // Schedule next transmission
+            os_setTimedCallback(&sendjob, os_getTime()+sec2osticks(TX_INTERVAL), do_send);
+            break;
+        case EV_LOST_TSYNC:
+            Serial.println(F("EV_LOST_TSYNC"));
+            break;
+        case EV_RESET:
+            Serial.println(F("EV_RESET"));
+            break;
+        case EV_RXCOMPLETE:
+            // data received in ping slot
+            Serial.println(F("EV_RXCOMPLETE"));
+            break;
+        case EV_LINK_DEAD:
+            Serial.println(F("EV_LINK_DEAD"));
+            break;
+        case EV_LINK_ALIVE:
+            Serial.println(F("EV_LINK_ALIVE"));
+            break;
+         default:
+            Serial.println(F("Unknown event"));
+            break;
+    }
 }
-
-void printLORAParameters(struct Configuration configuration) {
-	Serial.println("----------------------------------------");
-
-	Serial.print(F("HEAD BIN: "));  Serial.print(configuration.HEAD, BIN);Serial.print(" ");Serial.print(configuration.HEAD, DEC);Serial.print(" ");Serial.println(configuration.HEAD, HEX);
-	Serial.println(F(" "));
-	Serial.print(F("AddH BIN: "));  Serial.println(configuration.ADDH, BIN);
-	Serial.print(F("AddL BIN: "));  Serial.println(configuration.ADDL, BIN);
-	Serial.print(F("Chan BIN: "));  Serial.print(configuration.CHAN, DEC); Serial.print(" -> "); Serial.println(configuration.getChannelDescription());
-	Serial.println(F(" "));
-	Serial.print(F("SpeedParityBit BIN    : "));  Serial.print(configuration.SPED.uartParity, BIN);Serial.print(" -> "); Serial.println(configuration.SPED.getUARTParityDescription());
-	Serial.print(F("SpeedUARTDataRate BIN : "));  Serial.print(configuration.SPED.uartBaudRate, BIN);Serial.print(" -> "); Serial.println(configuration.SPED.getUARTBaudRate());
-	Serial.print(F("SpeedAirDataRate BIN  : "));  Serial.print(configuration.SPED.airDataRate, BIN);Serial.print(" -> "); Serial.println(configuration.SPED.getAirDataRate());
-
-	Serial.print(F("OptionTrans BIN       : "));  Serial.print(configuration.OPTION.fixedTransmission, BIN);Serial.print(" -> "); Serial.println(configuration.OPTION.getFixedTransmissionDescription());
-	Serial.print(F("OptionPullup BIN      : "));  Serial.print(configuration.OPTION.ioDriveMode, BIN);Serial.print(" -> "); Serial.println(configuration.OPTION.getIODroveModeDescription());
-	Serial.print(F("OptionWakeup BIN      : "));  Serial.print(configuration.OPTION.wirelessWakeupTime, BIN);Serial.print(" -> "); Serial.println(configuration.OPTION.getWirelessWakeUPTimeDescription());
-	Serial.print(F("OptionFEC BIN         : "));  Serial.print(configuration.OPTION.fec, BIN);Serial.print(" -> "); Serial.println(configuration.OPTION.getFECDescription());
-	Serial.print(F("OptionPower BIN       : "));  Serial.print(configuration.OPTION.transmissionPower, BIN);Serial.print(" -> "); Serial.println(configuration.OPTION.getTransmissionPowerDescription());
-
-	Serial.println("----------------------------------------");
-
-}
-void printLORAModuleInformation(struct ModuleInformation moduleInformation) {
-	Serial.println("----------------------------------------");
-	Serial.print(F("HEAD BIN: "));  Serial.print(moduleInformation.HEAD, BIN);Serial.print(" ");Serial.print(moduleInformation.HEAD, DEC);Serial.print(" ");Serial.println(moduleInformation.HEAD, HEX);
-
-	Serial.print(F("Freq.: "));  Serial.println(moduleInformation.frequency, HEX);
-	Serial.print(F("Version  : "));  Serial.println(moduleInformation.version, HEX);
-	Serial.print(F("Features : "));  Serial.println(moduleInformation.features, HEX);
-	Serial.println("----------------------------------------");
-
+ 
+void do_send(osjob_t* j){
+    // Check if there is not a current TX/RX job running
+    if (LMIC.opmode & OP_TXRXPEND) {
+        Serial.println(F("OP_TXRXPEND, not sending"));
+    } else {
+        // Prepare upstream data transmission at the next possible time.
+        LMIC_setTxData2(1, lora_data, sizeof(lora_data)-1, 0);
+        Serial.println(F("Packet queued"));
+    }
+    // Next TX is scheduled after TX_COMPLETE event.
 }
