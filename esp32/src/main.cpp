@@ -133,7 +133,8 @@ void setup() {
   pinMode(FLOW_ON_OFF, OUTPUT);
 
   //write sensor on/off
-  if (bootCount%10==0) digitalWrite(MOSFET_GPS, HIGH);
+  digitalWrite(MOSFET_GPS, LOW);
+  // if (bootCount%10==0) digitalWrite(MOSFET_GPS, HIGH);
   digitalWrite(MOSFET_NANO_SMT_WATERMARK, HIGH);
   digitalWrite(MOSFET_PUMPE, LOW);  
   digitalWrite(MOSFET_DS1603, LOW);
@@ -222,30 +223,31 @@ void setup() {
   //---------------------------------
   if ((ds1603L_.waterlvl>=50) && ((watermark_.soilwatertension<=2500 && dailyWaterOutput<=20000)||(bootCount%24 == 0))){
     //Die Funktion flow_handler() als Interrupthandler für steigende Flanken des Durchflusssensors festlegen
-    digitalWrite(FLOW_ON_OFF, HIGH);
-    attachInterrupt(digitalPinToInterrupt(FLOW), flow_handler, FALLING);
+    // digitalWrite(FLOW_ON_OFF, HIGH);
+    // attachInterrupt(digitalPinToInterrupt(FLOW), flow_handler, FALLING);
 
-    digitalWrite(MOSFET_PUMPE, !digitalRead(MOSFET_PUMPE)); //pump on
-    while ((ds1603L_.waterlvl>=50) && (flowsens_.waterflow<=5000))
-    {
-      readFlow();
-    }
-    digitalWrite(MOSFET_PUMPE, !digitalRead(MOSFET_PUMPE)); //pump off
+    // digitalWrite(MOSFET_PUMPE, !digitalRead(MOSFET_PUMPE)); //pump on
+    // while ((ds1603L_.waterlvl>=50) && (flowsens_.waterflow<=5000))
+    // {
+    //   readFlow();
+    // }
+    // digitalWrite(MOSFET_PUMPE, !digitalRead(MOSFET_PUMPE)); //pump off
 
-    lora_data[8] = highByte(flowsens_.waterflow);
-    lora_data[9] = lowByte(flowsens_.waterflow);
-    dailyWaterOutput = dailyWaterOutput + flowsens_.waterflow;
-    flowsens_.waterflow = 0;
-    digitalWrite(FLOW_ON_OFF, LOW);
+    // lora_data[8] = highByte(flowsens_.waterflow);
+    // lora_data[9] = lowByte(flowsens_.waterflow);
+    // dailyWaterOutput = dailyWaterOutput + flowsens_.waterflow;
+    // flowsens_.waterflow = 0;
+    // digitalWrite(FLOW_ON_OFF, LOW);
+    if (DEBUG)Serial.println("Gießen!!!");
   }
 
   //once in a day
   if (bootCount%24==0) {
     //ToDo GPS
-    while(Serial1.available() > 0)
-      gps.encode(Serial1.read());
-    Serial.println();
-    readGPS();
+    // while(Serial1.available() > 0)
+    //   gps.encode(Serial1.read());
+    // Serial.println();
+    // readGPS();
 
     dailyWaterOutput = 0;
   }
