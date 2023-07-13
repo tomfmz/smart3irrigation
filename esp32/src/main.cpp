@@ -30,6 +30,9 @@
 #define LORA_DIO1 2
 #define LORA_DIO2 15
 #define WATERMARKPIN 34
+#define uS_TO_S_FACTOR 1000000      // Conversion factor for micro seconds to seconds 
+#define TIME_TO_DEEPSLEEP  5        // Time ESP32 will go to sleep (in seconds) 
+RTC_DATA_ATTR int bootCount = 0;    // save bootCounter in non volatile memory
 
 // How often to send a packet. Note that this sketch bypasses the normal
 // LMIC duty cycle limiting, so when you change anything in this sketch
@@ -135,9 +138,9 @@ void setup() {
   pinMode(FLOW, INPUT);
   pinMode(FLOW_ON_OFF, OUTPUT);
 
-  //pull down all output pins
-  digitalWrite(MOSFET_GPS, LOW);
-  digitalWrite(MOSFET_NANO_SMT_WATERMARK, LOW);
+  //write sensor on/off
+  if (bootCount%10==0) digitalWrite(MOSFET_GPS, HIGH);
+  digitalWrite(MOSFET_NANO_SMT_WATERMARK, HIGH);
   digitalWrite(MOSFET_PUMPE, LOW);  
   digitalWrite(MOSFET_DS1603, LOW);
   digitalWrite(FLOW_ON_OFF, LOW);
@@ -152,27 +155,35 @@ void setup() {
   //Softwareserial
   smtSerial.begin(SWSERIAL_BAUD, SWSERIAL_8N1, NANO_SWSERIAL_RX,_S, false);
   if (!smtSerial) { // If the object did not initialize, then its configuration is invalid
-    Serial.println("Invalid EspSoftwareSerial pin configuration, check config"); 
+    if(DEBUG)Serial.println("Invalid EspSoftwareSerial pin configuration, check config"); 
     while (1) { // Don't continue with invalid configuration
       delay (1000);
     }
   }
-
   ds1603LSerial.begin(SWSERIAL_BAUD, SWSERIAL_8N1, DS1603L_RX, DS1603L_TX, false);
   if (!ds1603LSerial) { // If the object did not initialize, then its configuration is invalid
-    Serial.println("Invalid EspSoftwareSerial pin configuration, check config"); 
+    if(DEBUG)Serial.println("Invalid EspSoftwareSerial pin configuration, check config"); 
     while (1) { // Don't continue with invalid configuration
       delay (1000);
     }
   }
 
-  // Die Funktion flow_handler() als Interrupthandler für steigende Flanken des Durchflusssensors festlegen
-  attachInterrupt(digitalPinToInterrupt(FLOW), flow_handler, FALLING);
-  
-  ds1603.begin();
-  
-  dht.begin();
+  //------------------------
+  //----DeepSleep Setup-----
+  //------------------------
+  //Increment boot number
+  ++bootCount;
+  //configure the wake up source to timer, set ESP32 to wake up every #TIME_TO_DEEPSLEEP seconds
+  esp_sleep_enable_timer_wakeup(TIME_TO_DEEPSLEEP * uS_TO_S_FACTOR);
+  esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_OFF);
+  if(DEBUG){
+    Serial.println("Boot number: " + String(bootCount));
+    Serial.println("Setup ESP32 to sleep for " + String(TIME_TO_DEEPSLEEP) + " Seconds");
+  }
 
+  //--------------------------
+  //------LoRaWAN setup-------
+  //--------------------------
   // LMIC init
   os_init();
   // Reset the MAC state. Session and pending data transfers will be discarded.
@@ -182,47 +193,78 @@ void setup() {
   LMIC_setLinkCheckMode(0);
   LMIC_setClockError(MAX_CLOCK_ERROR * 1 / 100);
 
-  // Start job (sending automatically starts OTAA too)
-  previousMillis = millis();
-  do_send(&sendjob);
-
   delay(500);  // allow things to settle
-  while (!Serial) // Auf alle Serials warten?
-    ;
-}
-
-void loop() {
-  unsigned long loopend = millis() + 10000;
+  
+  //-------------------------
+  //------Read Sensors-------
+  //-------------------------
+  //DHT22
+  dht.begin();
+  delay(100);
   readDHT22();
   lora_data[0] = (uint8_t)dht22_.humidity;
   lora_data[1] = (uint8_t)dht22_.temp;
+  //Truebner SMT100
   readSMT100();
   lora_data[2] = (uint8_t)smt100_.volwater;
   lora_data[3] = (uint8_t)(smt100_.voltage*10);
-  readFlow();
-  lora_data[4] = highByte(flowsens_.waterflow);
-  lora_data[5] = lowByte(flowsens_.waterflow);
-  readDS1603L();
-  lora_data[4] = highByte(ds1603L_.waterlvl);
-  lora_data[5] = lowByte(ds1603L_.waterlvl);
+  //Irrometer Watermark
   watermark_.adc = analogRead(WATERMARKPIN);
-  lora_data[6] = highByte(watermark_.adc);
-  lora_data[7] = lowByte(watermark_.adc);
-  digitalWrite(MOSFET_PUMPE, !digitalRead(MOSFET_PUMPE));
+  watermark_.soilwatertension = watermark_.adc/4095;
+  lora_data[4] = highByte(watermark_.adc);
+  lora_data[5] = lowByte(watermark_.adc);
+  //Ultrasonic waterlevel
+  digitalWrite(MOSFET_DS1603, HIGH);
+  delay(100);
+  ds1603.begin();
+  delay(100);
+  readDS1603L();
+  digitalWrite(MOSFET_DS1603, LOW);
+  lora_data[6] = highByte(ds1603L_.waterlvl);
+  lora_data[7] = lowByte(ds1603L_.waterlvl);
+  //Waterflow
+  //Die Funktion flow_handler() als Interrupthandler für steigende Flanken des Durchflusssensors festlegen
   digitalWrite(FLOW_ON_OFF, HIGH);
+  attachInterrupt(digitalPinToInterrupt(FLOW), flow_handler, FALLING);
+  readFlow();
+  lora_data[8] = highByte(flowsens_.waterflow);
+  lora_data[9] = lowByte(flowsens_.waterflow);
 
-  os_runloop_once();
-  if (millis() - previousMillis > interval2) {
-    do_send(&sendjob);
-    previousMillis = millis();
-  }
+  digitalWrite(MOSFET_PUMPE, !digitalRead(MOSFET_PUMPE));
   
-  while(millis() < loopend) {
-    while(Serial1.available() > 0)
+  if (bootCount%10==0) {
+     while(Serial1.available() > 0)
       gps.encode(Serial1.read());
+    Serial.println();
+    readGPS();
   }
-  Serial.println();
-  readGPS();
+
+  //-----------------------------------
+  //------send LoRaWAN Dataframe-------
+  //-----------------------------------
+  os_runloop_once();
+  do_send(&sendjob);
+
+  //----------------------------
+  //------enter DeepSleep-------
+  //----------------------------
+  //pull down all output pins
+  digitalWrite(MOSFET_GPS, LOW);
+  digitalWrite(MOSFET_NANO_SMT_WATERMARK, LOW);
+  digitalWrite(MOSFET_PUMPE, LOW);  
+  digitalWrite(MOSFET_DS1603, LOW);
+  digitalWrite(FLOW_ON_OFF, LOW);
+  if(DEBUG)Serial.println("Going to sleep now");
+  Serial.flush();
+  Serial1.flush();
+  Serial2.flush();
+  ds1603LSerial.flush();
+  smtSerial.flush();
+  delay(200);
+  esp_deep_sleep_start();
+}
+
+void loop() {
 }
 
 bool readDHT22(void) {
