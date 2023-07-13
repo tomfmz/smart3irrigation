@@ -30,8 +30,9 @@
 #define LORA_DIO1 2
 #define LORA_DIO2 15
 #define WATERMARKPIN 34
-#define TIME_TO_DEEPSLEEP 10000000        // Time ESP32 will go to sleep (in µseconds) 
-RTC_DATA_ATTR int bootCount = 0;    // save bootCounter in non volatile memory
+#define TIME_TO_DEEPSLEEP 10000000        // Time ESP32 will go to sleep (in µseconds) 3600000000 µS = 1h for debug 10s (10000000)
+RTC_DATA_ATTR int bootCount = 0;          // save bootCounter in non volatile memory
+RTC_DATA_ATTR int dailyWaterOutput = 0;   // save dailyWaterOutput in non volatile memory
 
 // How often to send a packet. Note that this sketch bypasses the normal
 // LMIC duty cycle limiting, so when you change anything in this sketch
@@ -50,8 +51,6 @@ DS1603L ds1603(ds1603LSerial);
 
 TinyGPSPlus gps;
 
-unsigned long int time_old = 0;
-int t_dht = 1000; //millis
 const double mls_per_count = 3.0382;
 volatile unsigned long flow_counter = 0;
 unsigned long old_counter = 0;
@@ -66,7 +65,7 @@ void readGPS(void);
 void do_send(osjob_t* j);
 void onEvent (ev_t ev);
 
-static uint8_t lora_data[7];
+static uint8_t lora_data[10];
 static osjob_t sendjob;
 
 static const u1_t PROGMEM APPEUI[8]={0x00, 0x12, 0x25, 0xFF, 0xFF, 0x41, 0x40, 0xA8}; //a84041ffff251200 Gateway id
@@ -77,10 +76,6 @@ void os_getDevEui (u1_t* buf) { memcpy_P(buf, DEVEUI, 8);}
  
 static const u1_t PROGMEM APPKEY[16] = { 0x70, 0xBE, 0x53, 0x6E, 0x52, 0xC3, 0xBE, 0x45, 0x0C, 0x0F, 0x88, 0xF5, 0x12, 0x0F, 0x50, 0x8B}; 
 void os_getDevKey (u1_t* buf) {  memcpy_P(buf, APPKEY, 16);}
-
-long previousMillis = 0;
-long interval = 60000;  //send interval when charge controller active (CS > 0)
-long interval2 = 30000;  //send interval when charge controller inactive (CS == 0)
 
 // Pin mapping
 const lmic_pinmap lmic_pins = {
@@ -222,27 +217,37 @@ void setup() {
   lora_data[6] = highByte(ds1603L_.waterlvl);
   lora_data[7] = lowByte(ds1603L_.waterlvl);
 
-  //----------------ToDo----------------
-  //------Bewässerungsalgorithmus-------
-  //------------------------------------
-  //Waterflow
-  //Die Funktion flow_handler() als Interrupthandler für steigende Flanken des Durchflusssensors festlegen
-  digitalWrite(FLOW_ON_OFF, HIGH);
-  attachInterrupt(digitalPinToInterrupt(FLOW), flow_handler, FALLING);
-  readFlow();
-  lora_data[8] = highByte(flowsens_.waterflow);
-  lora_data[9] = lowByte(flowsens_.waterflow);
+  //--------------WIP---------------
+  //------irrigation algorithm-------
+  //---------------------------------
+  if ((ds1603L_.waterlvl>=5000) && ((watermark_.soilwatertension<=2500 && dailyWaterOutput<=20000)||(bootCount%24 == 0))){
+    //Die Funktion flow_handler() als Interrupthandler für steigende Flanken des Durchflusssensors festlegen
+    digitalWrite(FLOW_ON_OFF, HIGH);
+    attachInterrupt(digitalPinToInterrupt(FLOW), flow_handler, FALLING);
 
-  digitalWrite(MOSFET_PUMPE, !digitalRead(MOSFET_PUMPE));
-  
-  digitalWrite(FLOW_ON_OFF, LOW);
+    digitalWrite(MOSFET_PUMPE, !digitalRead(MOSFET_PUMPE)); //pump on
+    while ((ds1603L_.waterlvl>=5000) && (flowsens_.waterflow<=5000))
+    {
+      readFlow();
+    }
+    digitalWrite(MOSFET_PUMPE, !digitalRead(MOSFET_PUMPE)); //pump off
 
-  //GPS every 10 bootups
-  if (bootCount%10==0) {
-     while(Serial1.available() > 0)
+    lora_data[8] = highByte(flowsens_.waterflow);
+    lora_data[9] = lowByte(flowsens_.waterflow);
+    dailyWaterOutput = dailyWaterOutput + flowsens_.waterflow;
+    flowsens_.waterflow = 0;
+    digitalWrite(FLOW_ON_OFF, LOW);
+  }
+
+  //once in a day
+  if (bootCount%24==0) {
+    //ToDo GPS
+    while(Serial1.available() > 0)
       gps.encode(Serial1.read());
     Serial.println();
     readGPS();
+
+    dailyWaterOutput = 0;
   }
 
   //-----------------------------------
@@ -275,25 +280,23 @@ void loop() {
 
 bool readDHT22(void) {
   bool read = false;
-  if ((millis()-time_old)>t_dht){
-    dht22_.humidity = dht.readHumidity();    // Lesen der Luftfeuchtigkeit und speichern in die Variable h
-    dht22_.temp = dht.readTemperature(); // Lesen der Temperatur in °C und speichern in die Variable t
-    if (DEBUG){
-      Serial.print("Luftfeuchtigkeit:");
-      Serial.print(dht22_.humidity);                  // Ausgeben der Luftfeuchtigkeit
-      Serial.print("%\t");              // Tabulator
-      Serial.print("Temperatur: ");
-      Serial.print(dht22_.temp);                  // Ausgeben der Temperatur
-      Serial.write("°");                // Schreiben des ° Zeichen
-      Serial.println("C");
-    }
-    time_old = millis();
-    /*********************( Überprüfen ob alles richtig Ausgelesen wurde )*********************/ 
-    if (isnan(dht22_.humidity) || isnan(dht22_.temp)) {       
-      Serial.println("Fehler beim auslesen des Sensors!");
-      read = false;
-    }else read = true;
+  dht22_.humidity = dht.readHumidity();    // Lesen der Luftfeuchtigkeit und speichern in die Variable h
+  dht22_.temp = dht.readTemperature(); // Lesen der Temperatur in °C und speichern in die Variable t
+  if (DEBUG){
+    Serial.print("Luftfeuchtigkeit:");
+    Serial.print(dht22_.humidity);                  // Ausgeben der Luftfeuchtigkeit
+    Serial.print("%\t");              // Tabulator
+    Serial.print("Temperatur: ");
+    Serial.print(dht22_.temp);                  // Ausgeben der Temperatur
+    Serial.write("°");                // Schreiben des ° Zeichen
+    Serial.println("C");
   }
+  /*********************( Überprüfen ob alles richtig Ausgelesen wurde )*********************/ 
+  if (isnan(dht22_.humidity) || isnan(dht22_.temp)) {       
+    Serial.println("Fehler beim auslesen des Sensors!");
+    read = false;
+  }else read = true;
+  
   return read;
 }
 
