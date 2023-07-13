@@ -16,7 +16,10 @@
 #define DS1603L_RX 22
 #define GPS_TX 14
 #define GPS_RX 12
-#define MOSFET_PUMPE 33 
+#define MOSFET_PUMPE 33
+#define MOSFET_NANO_SMT_WATERMARK 4
+#define MOSFET_GPS 13
+#define MOSFET_DS1603 25
 #define FLOW 39
 #define FLOW_ON_OFF 32
 #define SWSERIAL_BAUD 9600
@@ -26,6 +29,7 @@
 #define LORA_DIO0 5
 #define LORA_DIO1 2
 #define LORA_DIO2 15
+#define WATERMARKPIN 34
 
 // How often to send a packet. Note that this sketch bypasses the normal
 // LMIC duty cycle limiting, so when you change anything in this sketch
@@ -110,12 +114,42 @@ struct flowsens
 };
 flowsens flowsens_;
 
+struct watermark
+{
+   uint16_t adc;
+   uint16_t soilwatertension;
+};
+watermark watermark_;
+
 void setup() {
+  //-----------------------
+  //------PIN inits-------
+  //-----------------------
+  //assing MOSFET gate pins
+  pinMode(MOSFET_GPS, OUTPUT);
+  pinMode(MOSFET_NANO_SMT_WATERMARK, OUTPUT);
+  pinMode(MOSFET_PUMPE, OUTPUT);
+  pinMode(MOSFET_DS1603, OUTPUT);
+
+  pinMode(DHTPIN, INPUT_PULLUP); //needs to be a pullup to readout the sensor
+  pinMode(FLOW, INPUT);
+  pinMode(FLOW_ON_OFF, OUTPUT);
+
+  //pull down all output pins
+  digitalWrite(MOSFET_GPS, LOW);
+  digitalWrite(MOSFET_NANO_SMT_WATERMARK, LOW);
+  digitalWrite(MOSFET_PUMPE, LOW);  
+  digitalWrite(MOSFET_DS1603, LOW);
+  digitalWrite(FLOW_ON_OFF, LOW);
+  
+  //-----------------------
+  //-----Serial inits------
+  //-----------------------
   // Hardwareserials
   Serial.begin(HWSERIAL_BAUD);
   Serial1.begin(9600, SERIAL_8N1, 12, 14); // funktioniert
   Serial2.begin(9600, SERIAL_8N1, 16, 17); // funktioniert
-
+  //Softwareserial
   smtSerial.begin(SWSERIAL_BAUD, SWSERIAL_8N1, NANO_SWSERIAL_RX,_S, false);
   if (!smtSerial) { // If the object did not initialize, then its configuration is invalid
     Serial.println("Invalid EspSoftwareSerial pin configuration, check config"); 
@@ -132,13 +166,7 @@ void setup() {
     }
   }
 
-  pinMode(MOSFET_PUMPE, OUTPUT);
-  pinMode(FLOW, INPUT);
-  pinMode(FLOW_ON_OFF, OUTPUT);
-
-  digitalWrite(FLOW_ON_OFF, HIGH);
-  
-  // Die Funktion flowb_handler() als Interrupthandler für steigende Flanken des Durchflusssensors festlegen
+  // Die Funktion flow_handler() als Interrupthandler für steigende Flanken des Durchflusssensors festlegen
   attachInterrupt(digitalPinToInterrupt(FLOW), flow_handler, FALLING);
   
   ds1603.begin();
@@ -177,6 +205,9 @@ void loop() {
   readDS1603L();
   lora_data[4] = highByte(ds1603L_.waterlvl);
   lora_data[5] = lowByte(ds1603L_.waterlvl);
+  watermark_.adc = analogRead(WATERMARKPIN);
+  lora_data[6] = highByte(watermark_.adc);
+  lora_data[7] = lowByte(watermark_.adc);
   digitalWrite(MOSFET_PUMPE, !digitalRead(MOSFET_PUMPE));
   digitalWrite(FLOW_ON_OFF, HIGH);
 
