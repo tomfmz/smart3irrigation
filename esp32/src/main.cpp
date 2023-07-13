@@ -30,8 +30,7 @@
 #define LORA_DIO1 2
 #define LORA_DIO2 15
 #define WATERMARKPIN 34
-#define uS_TO_S_FACTOR 1000000      // Conversion factor for micro seconds to seconds 
-#define TIME_TO_DEEPSLEEP  5        // Time ESP32 will go to sleep (in seconds) 
+#define TIME_TO_DEEPSLEEP 10000000        // Time ESP32 will go to sleep (in µseconds) 
 RTC_DATA_ATTR int bootCount = 0;    // save bootCounter in non volatile memory
 
 // How often to send a packet. Note that this sketch bypasses the normal
@@ -153,7 +152,7 @@ void setup() {
   Serial1.begin(9600, SERIAL_8N1, 12, 14); // funktioniert
   Serial2.begin(9600, SERIAL_8N1, 16, 17); // funktioniert
   //Softwareserial
-  smtSerial.begin(SWSERIAL_BAUD, SWSERIAL_8N1, NANO_SWSERIAL_RX,_S, false);
+  smtSerial.begin(SWSERIAL_BAUD, SWSERIAL_8N1, NANO_SWSERIAL_RX,NANO_SWSERIAL_TX, false);
   if (!smtSerial) { // If the object did not initialize, then its configuration is invalid
     if(DEBUG)Serial.println("Invalid EspSoftwareSerial pin configuration, check config"); 
     while (1) { // Don't continue with invalid configuration
@@ -173,25 +172,25 @@ void setup() {
   //------------------------
   //Increment boot number
   ++bootCount;
-  //configure the wake up source to timer, set ESP32 to wake up every #TIME_TO_DEEPSLEEP seconds
-  esp_sleep_enable_timer_wakeup(TIME_TO_DEEPSLEEP * uS_TO_S_FACTOR);
+  //configure the wake up source to timer, set ESP32 to wake up every #TIME_TO_DEEPSLEEP in µs
+  esp_sleep_enable_timer_wakeup(TIME_TO_DEEPSLEEP);
   esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_OFF);
   if(DEBUG){
     Serial.println("Boot number: " + String(bootCount));
-    Serial.println("Setup ESP32 to sleep for " + String(TIME_TO_DEEPSLEEP) + " Seconds");
+    Serial.println("Setup ESP32 to sleep for " + String(TIME_TO_DEEPSLEEP/1000000) + " Seconds");
   }
 
   //--------------------------
   //------LoRaWAN setup-------
   //--------------------------
-  // LMIC init
-  os_init();
-  // Reset the MAC state. Session and pending data transfers will be discarded.
-  LMIC_reset();
-  //LMIC specific parameters
-  LMIC_setAdrMode(0);
-  LMIC_setLinkCheckMode(0);
-  LMIC_setClockError(MAX_CLOCK_ERROR * 1 / 100);
+  // // LMIC init
+  // os_init();
+  // // Reset the MAC state. Session and pending data transfers will be discarded.
+  // LMIC_reset();
+  // //LMIC specific parameters
+  // LMIC_setAdrMode(0);
+  // LMIC_setLinkCheckMode(0);
+  // LMIC_setClockError(MAX_CLOCK_ERROR * 1 / 100);
 
   delay(500);  // allow things to settle
   
@@ -242,8 +241,8 @@ void setup() {
   //-----------------------------------
   //------send LoRaWAN Dataframe-------
   //-----------------------------------
-  os_runloop_once();
-  do_send(&sendjob);
+  // os_runloop_once();
+  // do_send(&sendjob);
 
   //----------------------------
   //------enter DeepSleep-------
@@ -326,7 +325,6 @@ void readDS1603L(void) {
       break;
   }
 }
-
 
 void readSMT100(void){
   String SensorInfo = "<?M!>";
