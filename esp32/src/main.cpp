@@ -220,13 +220,13 @@ void setup() {
   //--------------WIP---------------
   //------irrigation algorithm-------
   //---------------------------------
-  if ((ds1603L_.waterlvl>=5000) && ((watermark_.soilwatertension<=2500 && dailyWaterOutput<=20000)||(bootCount%24 == 0))){
+  if ((ds1603L_.waterlvl>=50) && ((watermark_.soilwatertension<=2500 && dailyWaterOutput<=20000)||(bootCount%24 == 0))){
     //Die Funktion flow_handler() als Interrupthandler für steigende Flanken des Durchflusssensors festlegen
     digitalWrite(FLOW_ON_OFF, HIGH);
     attachInterrupt(digitalPinToInterrupt(FLOW), flow_handler, FALLING);
 
     digitalWrite(MOSFET_PUMPE, !digitalRead(MOSFET_PUMPE)); //pump on
-    while ((ds1603L_.waterlvl>=5000) && (flowsens_.waterflow<=5000))
+    while ((ds1603L_.waterlvl>=50) && (flowsens_.waterflow<=5000))
     {
       readFlow();
     }
