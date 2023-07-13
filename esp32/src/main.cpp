@@ -221,6 +221,10 @@ void setup() {
   digitalWrite(MOSFET_DS1603, LOW);
   lora_data[6] = highByte(ds1603L_.waterlvl);
   lora_data[7] = lowByte(ds1603L_.waterlvl);
+
+  //----------------ToDo----------------
+  //------Bewässerungsalgorithmus-------
+  //------------------------------------
   //Waterflow
   //Die Funktion flow_handler() als Interrupthandler für steigende Flanken des Durchflusssensors festlegen
   digitalWrite(FLOW_ON_OFF, HIGH);
@@ -231,6 +235,9 @@ void setup() {
 
   digitalWrite(MOSFET_PUMPE, !digitalRead(MOSFET_PUMPE));
   
+  digitalWrite(FLOW_ON_OFF, LOW);
+
+  //GPS every 10 bootups
   if (bootCount%10==0) {
      while(Serial1.available() > 0)
       gps.encode(Serial1.read());
