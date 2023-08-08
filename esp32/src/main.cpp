@@ -12,8 +12,8 @@
 #define DHTTYPE DHT22
 #define NANO_SWSERIAL_TX 26
 #define NANO_SWSERIAL_RX 35
-#define DS1603L_TX 23
-#define DS1603L_RX 22
+//#define DS1603L_TX 23
+//#define DS1603L_RX 22
 #define GPS_TX 14
 #define GPS_RX 12
 #define MOSFET_PUMPE 33
@@ -21,7 +21,7 @@
 #define MOSFET_GPS 13
 #define MOSFET_DS1603 25
 #define FLOW 39
-#define FLOW_ON_OFF 32
+#define FLOW_DHT_ON_OFF 32
 #define SWSERIAL_BAUD 9600
 #define HWSERIAL_BAUD 115200 /*!< The baud rate for the output serial port */
 #define LORA_NSS 22
@@ -30,7 +30,7 @@
 #define LORA_DIO1 2
 #define LORA_DIO2 15
 #define WATERMARKPIN 34
-#define TIME_TO_DEEPSLEEP 10000000        // Time ESP32 will go to sleep (in µseconds) 3600000000 µS = 1h for debug 10s (10000000)
+#define TIME_TO_DEEPSLEEP 2000000        // Time ESP32 will go to sleep (in µseconds) 3600000000 µS = 1h for debug 10s (10000000)
 RTC_DATA_ATTR int bootCount = 0;          // save bootCounter in non volatile memory
 RTC_DATA_ATTR int dailyWaterOutput = 0;   // save dailyWaterOutput in non volatile memory
 
@@ -46,8 +46,9 @@ DHT dht(DHTPIN, DHTTYPE);
 
 EspSoftwareSerial::UART smtSerial;
 
-EspSoftwareSerial::UART ds1603LSerial;
-DS1603L ds1603(ds1603LSerial);
+//EspSoftwareSerial::UART ds1603LSerial;
+//DS1603L ds1603(ds1603LSerial);
+DS1603L ds1603(Serial2);
 
 TinyGPSPlus gps;
 
@@ -61,6 +62,8 @@ bool readDHT22(void);
 void readSMT100(void);
 void readDS1603L(void);
 void readGPS(void);
+void readWatermark(void);
+
 //--------------------LoRaWAN-------------------
 void do_send(osjob_t* j);
 void onEvent (ev_t ev);
@@ -119,6 +122,10 @@ struct watermark
 watermark watermark_;
 
 void setup() {
+
+  pinMode(2, OUTPUT);
+  digitalWrite(2, HIGH);
+
   //-----------------------
   //------PIN inits-------
   //-----------------------
@@ -127,18 +134,21 @@ void setup() {
   pinMode(MOSFET_NANO_SMT_WATERMARK, OUTPUT);
   pinMode(MOSFET_PUMPE, OUTPUT);
   pinMode(MOSFET_DS1603, OUTPUT);
+  pinMode(FLOW, INPUT);
+  //Die Funktion flow_handler() als Interrupthandler für steigende Flanken des Durchflusssensors festlegen
+  attachInterrupt(digitalPinToInterrupt(FLOW), flow_handler, FALLING);
 
   pinMode(DHTPIN, INPUT_PULLUP); //needs to be a pullup to readout the sensor
   pinMode(FLOW, INPUT);
-  pinMode(FLOW_ON_OFF, OUTPUT);
+  pinMode(FLOW_DHT_ON_OFF, OUTPUT);
 
   //write sensor on/off
   digitalWrite(MOSFET_GPS, LOW);
   // if (bootCount%10==0) digitalWrite(MOSFET_GPS, HIGH);
   digitalWrite(MOSFET_NANO_SMT_WATERMARK, HIGH);
   digitalWrite(MOSFET_PUMPE, LOW);  
-  digitalWrite(MOSFET_DS1603, LOW);
-  digitalWrite(FLOW_ON_OFF, LOW);
+  digitalWrite(MOSFET_DS1603, HIGH);
+  digitalWrite(FLOW_DHT_ON_OFF, HIGH);
   
   //-----------------------
   //-----Serial inits------
@@ -147,6 +157,7 @@ void setup() {
   Serial.begin(HWSERIAL_BAUD);
   Serial1.begin(9600, SERIAL_8N1, 12, 14); // funktioniert
   Serial2.begin(9600, SERIAL_8N1, 16, 17); // funktioniert
+
   //Softwareserial
   smtSerial.begin(SWSERIAL_BAUD, SWSERIAL_8N1, NANO_SWSERIAL_RX,NANO_SWSERIAL_TX, false);
   if (!smtSerial) { // If the object did not initialize, then its configuration is invalid
@@ -155,13 +166,13 @@ void setup() {
       delay (1000);
     }
   }
-  ds1603LSerial.begin(SWSERIAL_BAUD, SWSERIAL_8N1, DS1603L_RX, DS1603L_TX, false);
+  /*ds1603LSerial.begin(SWSERIAL_BAUD, SWSERIAL_8N1, DS1603L_RX, DS1603L_TX, false);
   if (!ds1603LSerial) { // If the object did not initialize, then its configuration is invalid
     if(DEBUG)Serial.println("Invalid EspSoftwareSerial pin configuration, check config"); 
     while (1) { // Don't continue with invalid configuration
       delay (1000);
     }
-  }
+  }*/
 
   //------------------------
   //----DeepSleep Setup-----
@@ -204,6 +215,7 @@ void setup() {
   lora_data[2] = (uint8_t)smt100_.volwater;
   lora_data[3] = (uint8_t)(smt100_.voltage*10);
   //Irrometer Watermark
+  readWatermark();
   watermark_.adc = analogRead(WATERMARKPIN);
   watermark_.soilwatertension = watermark_.adc/4095;
   lora_data[4] = highByte(watermark_.adc);
@@ -222,9 +234,7 @@ void setup() {
   //------irrigation algorithm-------
   //---------------------------------
   if ((ds1603L_.waterlvl>=50) && ((watermark_.soilwatertension<=2500 && dailyWaterOutput<=20000)||(bootCount%24 == 0))){
-    //Die Funktion flow_handler() als Interrupthandler für steigende Flanken des Durchflusssensors festlegen
-    // digitalWrite(FLOW_ON_OFF, HIGH);
-    // attachInterrupt(digitalPinToInterrupt(FLOW), flow_handler, FALLING);
+    
 
     // digitalWrite(MOSFET_PUMPE, !digitalRead(MOSFET_PUMPE)); //pump on
     // while ((ds1603L_.waterlvl>=50) && (flowsens_.waterflow<=5000))
@@ -258,6 +268,23 @@ void setup() {
   // os_runloop_once();
   // do_send(&sendjob);
 
+  unsigned long current_counter = flow_counter;
+
+  unsigned long lastprint = millis();
+  double flow = 0.0;
+  digitalWrite(MOSFET_PUMPE, HIGH);
+  while (flow < 0)
+  {
+    flow = (flow_counter - current_counter) * mls_per_count;
+    if (millis() - lastprint >= 1000)
+    {
+      Serial.println("Flow counter: " + (String) flow_counter);
+      Serial.println("Flow: " + (String) flow);
+      lastprint = millis();
+    }
+  }
+  digitalWrite(MOSFET_PUMPE, LOW);
+
   //----------------------------
   //------enter DeepSleep-------
   //----------------------------
@@ -266,12 +293,12 @@ void setup() {
   digitalWrite(MOSFET_NANO_SMT_WATERMARK, LOW);
   digitalWrite(MOSFET_PUMPE, LOW);  
   digitalWrite(MOSFET_DS1603, LOW);
-  digitalWrite(FLOW_ON_OFF, LOW);
+  digitalWrite(FLOW_DHT_ON_OFF, LOW);
   if(DEBUG)Serial.println("Going to sleep now");
   Serial.flush();
   Serial1.flush();
   Serial2.flush();
-  ds1603LSerial.flush();
+  //ds1603LSerial.flush();
   smtSerial.flush();
   delay(200);
   esp_deep_sleep_start();
@@ -352,9 +379,12 @@ void readSMT100(void){
   String stm100voltage_s;
   smtSerial.print(SensorInfo);
   delay(300);                    // wait a while for a response
+  Serial.print("reading smt");
   while (smtSerial.available()) {  // write the response to the screen
     c = smtSerial.read();
+    Serial.print(".");
   }
+  Serial.println();
   delay(2000);  // print again in three seconds
   smtSerial.print(Measure);
   delay(300);                    // wait a while for a response
@@ -415,6 +445,13 @@ void readGPS(){
   else
     gpsLocation += "NO_VALID_COURSE";
   Serial.println(gpsLocation);
+}
+
+void readWatermark() {
+  int raw = analogRead(WATERMARKPIN);
+  float kPa = (raw * 3.3 * 239) / (4095 * 2.8);
+  Serial.println ("Volt: " + (String) (raw * 3.3/ 4095));
+  Serial.println("Bodenwasserspannung: " + (String) kPa + " kPa");
 }
 
 void onEvent (ev_t ev) {
