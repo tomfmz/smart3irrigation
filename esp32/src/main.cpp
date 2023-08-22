@@ -30,7 +30,7 @@
 #define LORA_DIO1 2
 #define LORA_DIO2 15
 #define WATERMARKPIN 34
-#define TIME_TO_DEEPSLEEP 2000000        // Time ESP32 will go to sleep (in µseconds) 3600000000 µS = 1h for debug 10s (10000000)
+#define TIME_TO_DEEPSLEEP 10000000        // Time ESP32 will go to sleep (in µseconds) 3600000000 µS = 1h for debug 10s (10000000)
 RTC_DATA_ATTR int bootCount = 0;          // save bootCounter in non volatile memory
 RTC_DATA_ATTR int dailyWaterOutput = 0;   // save dailyWaterOutput in non volatile memory
 
@@ -146,6 +146,7 @@ void setup() {
   digitalWrite(MOSFET_GPS, LOW);
   // if (bootCount%10==0) digitalWrite(MOSFET_GPS, HIGH);
   digitalWrite(MOSFET_NANO_SMT_WATERMARK, HIGH);
+  delay(15000);
   digitalWrite(MOSFET_PUMPE, LOW);  
   digitalWrite(MOSFET_DS1603, HIGH);
   digitalWrite(FLOW_DHT_ON_OFF, HIGH);
@@ -290,6 +291,7 @@ void setup() {
   //----------------------------
   //pull down all output pins
   digitalWrite(MOSFET_GPS, LOW);
+  delay(5000);
   digitalWrite(MOSFET_NANO_SMT_WATERMARK, LOW);
   digitalWrite(MOSFET_PUMPE, LOW);  
   digitalWrite(MOSFET_DS1603, LOW);
