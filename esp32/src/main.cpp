@@ -260,12 +260,6 @@ void setup() {
     dailyWaterOutput = 0;
   }
 
-  //-----------------------------------
-  //------send LoRaWAN Dataframe-------
-  //-----------------------------------
-  os_runloop_once();
-  do_send(&sendjob);
-
   unsigned long current_counter = flow_counter;
 
   unsigned long lastprint = millis();
@@ -282,6 +276,13 @@ void setup() {
     }
   }
   digitalWrite(MOSFET_PUMPE, LOW);
+  lora_data[8] = flow/1000;
+
+  //-----------------------------------
+  //------send LoRaWAN Dataframe-------
+  //-----------------------------------
+  os_runloop_once();
+  do_send(&sendjob);
 
   //----------------------------
   //------enter DeepSleep-------
