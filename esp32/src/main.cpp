@@ -5,8 +5,8 @@ DHT dht(DHTPIN, DHTTYPE);
 
 EspSoftwareSerial::UART smtSerial;
 
-//EspSoftwareSerial::UART ds1603LSerial;
-//DS1603L ds1603(ds1603LSerial);
+EspSoftwareSerial::UART ds1603LSerial;
+DS1603L ds1603(ds1603LSerial); //welchen serial haben wir jetzt für den US?
 DS1603L ds1603(Serial2);
 
 TinyGPSPlus gps;
@@ -45,7 +45,6 @@ void setup() {
   digitalWrite(MOSFET_GPS, LOW);
   // if (bootCount%10==0) digitalWrite(MOSFET_GPS, HIGH);
   digitalWrite(MOSFET_NANO_SMT_WATERMARK, HIGH);
-  delay(15000);
   digitalWrite(MOSFET_PUMPE, LOW);  
   digitalWrite(MOSFET_DS1603, HIGH);
   digitalWrite(FLOW_DHT_ON_OFF, HIGH);
@@ -66,13 +65,13 @@ void setup() {
       delay (1000);
     }
   }
-  /*ds1603LSerial.begin(SWSERIAL_BAUD, SWSERIAL_8N1, DS1603L_RX, DS1603L_TX, false);
+  ds1603LSerial.begin(SWSERIAL_BAUD, SWSERIAL_8N1, DS1603L_RX, DS1603L_TX, false);
   if (!ds1603LSerial) { // If the object did not initialize, then its configuration is invalid
     if(DEBUG)Serial.println("Invalid EspSoftwareSerial pin configuration, check config"); 
     while (1) { // Don't continue with invalid configuration
       delay (1000);
     }
-  }*/
+  }
 
   //------------------------
   //----DeepSleep Setup-----
@@ -109,17 +108,20 @@ void setup() {
   delay(100);
   readDHT22();
   lora_data[0] = (uint8_t)dht22_.humidity;
-  lora_data[1] = (uint8_t)dht22_.temp;
+  int16_t temp_float = dht22_.temp*100;
+  lora_data[1] = highByte(temp_float);
+  lora_data[2] = lowByte(temp_float);
   //Truebner SMT100
   readSMT100();
-  lora_data[2] = (uint8_t)smt100_.volwater;
-  lora_data[3] = (uint8_t)(smt100_.voltage*10);
+  lora_data[3] = (uint8_t)smt100_.volwater;
+  lora_data[4] = (uint8_t)(smt100_.voltage*10);
+  temp_float = smt100_.temp*100;
+  lora_data[5] = highByte(temp_float);
+  lora_data[6] = lowByte(temp_float);
   //Irrometer Watermark
   readWatermark();
-  watermark_.adc = analogRead(WATERMARKPIN);
-  watermark_.soilwatertension = watermark_.adc/4095;
-  lora_data[4] = highByte(watermark_.adc);
-  lora_data[5] = lowByte(watermark_.adc);
+  lora_data[7] = highByte(watermark_.soilwatertension);
+  lora_data[8] = lowByte(watermark_.soilwatertension);
   //Ultrasonic waterlevel
   digitalWrite(MOSFET_DS1603, HIGH);
   delay(100);
@@ -127,30 +129,37 @@ void setup() {
   delay(100);
   readDS1603L();
   digitalWrite(MOSFET_DS1603, LOW);
-  lora_data[6] = highByte(ds1603L_.waterlvl);
-  lora_data[7] = lowByte(ds1603L_.waterlvl);
+  lora_data[9] = highByte(ds1603L_.waterlvl);
+  lora_data[10] = lowByte(ds1603L_.waterlvl);
 
   //--------------WIP---------------
   //------irrigation algorithm-------
   //---------------------------------
-  if ((ds1603L_.waterlvl>=50) && ((watermark_.soilwatertension<=2500 && dailyWaterOutput<=20000)||(bootCount%24 == 0))){
-    
-
-    // digitalWrite(MOSFET_PUMPE, !digitalRead(MOSFET_PUMPE)); //pump on
-    // while ((ds1603L_.waterlvl>=50) && (flowsens_.waterflow<=5000))
-    // {
-    //   readFlow();
-    // }
-    // digitalWrite(MOSFET_PUMPE, !digitalRead(MOSFET_PUMPE)); //pump off
-
-    // lora_data[8] = highByte(flowsens_.waterflow);
-    // lora_data[9] = lowByte(flowsens_.waterflow);
-    // dailyWaterOutput = dailyWaterOutput + flowsens_.waterflow;
-    // flowsens_.waterflow = 0;
-    // digitalWrite(FLOW_ON_OFF, LOW);
+  int irrigation = 0; 
+  if ((ds1603L_.waterlvl>=50) &&  (dailyWaterOutput<=20000) && ( ((smt100_.volwater<20)&&(watermark_.soilwatertension<=20)) || (bootCount%24 == 0) ) ){
+    irrigation = 5000;
     if (DEBUG)Serial.println("Gießen!!!");
   }
 
+  unsigned long current_counter = flow_counter;
+  unsigned long lastprint = millis();
+  digitalWrite(MOSFET_PUMPE, HIGH);
+  double flow = 0.0;
+  while (flow < irrigation)
+  {
+    flow = (flow_counter - current_counter) * mls_per_count;
+    if ((millis() - lastprint >= 1000) && DEBUG)
+    {
+      Serial.println("Flow counter: " + (String) flow_counter);
+      Serial.println("Flow: " + (String) flow);
+      lastprint = millis();
+    }
+  }
+  dailyWaterOutput = dailyWaterOutput + flow;
+  digitalWrite(MOSFET_PUMPE, LOW);
+  lora_data[11] = highByte(flowsens_.waterflow);
+  lora_data[12] = lowByte(flowsens_.waterflow);
+  
   //once in a day
   if (bootCount%24==0) {
     //ToDo GPS
@@ -158,27 +167,8 @@ void setup() {
     //   gps.encode(Serial1.read());
     // Serial.println();
     // readGPS();
-
     dailyWaterOutput = 0;
   }
-
-  unsigned long current_counter = flow_counter;
-
-  unsigned long lastprint = millis();
-  double flow = 0.0;
-  digitalWrite(MOSFET_PUMPE, HIGH);
-  while (flow < 0)
-  {
-    flow = (flow_counter - current_counter) * mls_per_count;
-    if (millis() - lastprint >= 1000)
-    {
-      Serial.println("Flow counter: " + (String) flow_counter);
-      Serial.println("Flow: " + (String) flow);
-      lastprint = millis();
-    }
-  }
-  digitalWrite(MOSFET_PUMPE, LOW);
-  lora_data[8] = flow/1000;
 
   //-----------------------------------
   //------send LoRaWAN Dataframe-------
@@ -352,8 +342,11 @@ void readGPS(){
 void readWatermark() {
   int raw = analogRead(WATERMARKPIN);
   float kPa = (raw * 3.3 * 239) / (4095 * 2.8);
-  Serial.println ("Volt: " + (String) (raw * 3.3/ 4095));
-  Serial.println("Bodenwasserspannung: " + (String) kPa + " kPa");
+  if(DEBUG){
+    Serial.println ("Volt: " + (String) (raw * 3.3/ 4095));
+    Serial.println("Bodenwasserspannung: " + (String) kPa + " kPa");
+  }
+  watermark_.soilwatertension = kPa;
 }
 
 void onEvent (ev_t ev) {
