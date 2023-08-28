@@ -25,9 +25,6 @@ void readWatermark(void);
 
 void setup() {
 
-  pinMode(2, OUTPUT);
-  digitalWrite(2, HIGH);
-
   //-----------------------
   //------PIN inits-------
   //-----------------------
@@ -93,14 +90,14 @@ void setup() {
   //--------------------------
   //------LoRaWAN setup-------
   //--------------------------
-  // // LMIC init
-  // os_init();
-  // // Reset the MAC state. Session and pending data transfers will be discarded.
-  // LMIC_reset();
-  // //LMIC specific parameters
-  // LMIC_setAdrMode(0);
-  // LMIC_setLinkCheckMode(0);
-  // LMIC_setClockError(MAX_CLOCK_ERROR * 1 / 100);
+  // LMIC init
+  os_init();
+  // Reset the MAC state. Session and pending data transfers will be discarded.
+  LMIC_reset();
+  //LMIC specific parameters
+  LMIC_setAdrMode(0);
+  LMIC_setLinkCheckMode(0);
+  LMIC_setClockError(MAX_CLOCK_ERROR * 1 / 100);
 
   delay(500);  // allow things to settle
   
@@ -165,12 +162,6 @@ void setup() {
     dailyWaterOutput = 0;
   }
 
-  //-----------------------------------
-  //------send LoRaWAN Dataframe-------
-  //-----------------------------------
-  // os_runloop_once();
-  // do_send(&sendjob);
-
   unsigned long current_counter = flow_counter;
 
   unsigned long lastprint = millis();
@@ -187,6 +178,13 @@ void setup() {
     }
   }
   digitalWrite(MOSFET_PUMPE, LOW);
+  lora_data[8] = flow/1000;
+
+  //-----------------------------------
+  //------send LoRaWAN Dataframe-------
+  //-----------------------------------
+  os_runloop_once();
+  do_send(&sendjob);
 
   //----------------------------
   //------enter DeepSleep-------
