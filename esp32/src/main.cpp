@@ -5,8 +5,6 @@ DHT dht(DHTPIN, DHTTYPE);
 
 EspSoftwareSerial::UART smtSerial;
 
-EspSoftwareSerial::UART ds1603LSerial;
-DS1603L ds1603(ds1603LSerial); //welchen serial haben wir jetzt für den US?
 DS1603L ds1603(Serial2);
 
 TinyGPSPlus gps;
@@ -60,13 +58,6 @@ void setup() {
   //Softwareserial
   smtSerial.begin(SWSERIAL_BAUD, SWSERIAL_8N1, NANO_SWSERIAL_RX,NANO_SWSERIAL_TX, false);
   if (!smtSerial) { // If the object did not initialize, then its configuration is invalid
-    if(DEBUG)Serial.println("Invalid EspSoftwareSerial pin configuration, check config"); 
-    while (1) { // Don't continue with invalid configuration
-      delay (1000);
-    }
-  }
-  ds1603LSerial.begin(SWSERIAL_BAUD, SWSERIAL_8N1, DS1603L_RX, DS1603L_TX, false);
-  if (!ds1603LSerial) { // If the object did not initialize, then its configuration is invalid
     if(DEBUG)Serial.println("Invalid EspSoftwareSerial pin configuration, check config"); 
     while (1) { // Don't continue with invalid configuration
       delay (1000);
@@ -129,18 +120,23 @@ void setup() {
   delay(100);
   readDS1603L();
   digitalWrite(MOSFET_DS1603, LOW);
-  lora_data[9] = highByte(ds1603L_.waterlvl);
-  lora_data[10] = lowByte(ds1603L_.waterlvl);
+  uint8_t tank_content = 105 * ds1603L_.waterlvl/500;
+  uint8_t tank_content_percentage = (ds1603L_.waterlvl/500)*100;
+  lora_data[9] = tank_content;
+  lora_data[10] = tank_content_percentage;
 
   //--------------WIP---------------
   //------irrigation algorithm-------
   //---------------------------------
   int irrigation = 0; 
-  if ((ds1603L_.waterlvl>=50) &&  (dailyWaterOutput<=20000) && ( ((smt100_.volwater<20)&&(watermark_.soilwatertension<=20)) || (bootCount%24 == 0) ) ){
+  if ((tank_content>=11) && (dailyWaterOutput<=20000) && ((smt100_.volwater<20)&&(watermark_.soilwatertension<=20)) ){
     irrigation = 5000;
     if (DEBUG)Serial.println("Gießen!!!");
   }
 
+  //--------------------------------
+  //-----------irrigation-----------
+  //--------------------------------
   unsigned long current_counter = flow_counter;
   unsigned long lastprint = millis();
   digitalWrite(MOSFET_PUMPE, HIGH);
