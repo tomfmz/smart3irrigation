@@ -113,37 +113,6 @@ flowsens flowsens_;
 void setup() {
   // Hardwareserials
   Serial.begin(HWSERIAL_BAUD);
-  Serial1.begin(9600, SERIAL_8N1, 12, 14); // funktioniert
-  Serial2.begin(9600, SERIAL_8N1, 16, 17); // funktioniert
-
-  smtSerial.begin(SWSERIAL_BAUD, SWSERIAL_8N1, NANO_SWSERIAL_RX,_S, false);
-  if (!smtSerial) { // If the object did not initialize, then its configuration is invalid
-    Serial.println("Invalid EspSoftwareSerial pin configuration, check config"); 
-    while (1) { // Don't continue with invalid configuration
-      delay (1000);
-    }
-  }
-
-  ds1603LSerial.begin(SWSERIAL_BAUD, SWSERIAL_8N1, DS1603L_RX, DS1603L_TX, false);
-  if (!ds1603LSerial) { // If the object did not initialize, then its configuration is invalid
-    Serial.println("Invalid EspSoftwareSerial pin configuration, check config"); 
-    while (1) { // Don't continue with invalid configuration
-      delay (1000);
-    }
-  }
-
-  pinMode(MOSFET_PUMPE, OUTPUT);
-  pinMode(FLOW, INPUT);
-  pinMode(FLOW_ON_OFF, OUTPUT);
-
-  digitalWrite(FLOW_ON_OFF, HIGH);
-  
-  // Die Funktion flowb_handler() als Interrupthandler für steigende Flanken des Durchflusssensors festlegen
-  attachInterrupt(digitalPinToInterrupt(FLOW), flow_handler, FALLING);
-  
-  ds1603.begin();
-  
-  dht.begin();
 
   // LMIC init
   os_init();
@@ -164,34 +133,15 @@ void setup() {
 }
 
 void loop() {
-  unsigned long loopend = millis() + 10000;
-  readDHT22();
-  lora_data[0] = (uint8_t)dht22_.humidity;
-  lora_data[1] = (uint8_t)dht22_.temp;
-  readSMT100();
-  lora_data[2] = (uint8_t)smt100_.volwater;
-  lora_data[3] = (uint8_t)(smt100_.voltage*10);
-  readFlow();
-  lora_data[4] = highByte(flowsens_.waterflow);
-  lora_data[5] = lowByte(flowsens_.waterflow);
-  readDS1603L();
-  lora_data[4] = highByte(ds1603L_.waterlvl);
-  lora_data[5] = lowByte(ds1603L_.waterlvl);
-  digitalWrite(MOSFET_PUMPE, !digitalRead(MOSFET_PUMPE));
-  digitalWrite(FLOW_ON_OFF, HIGH);
+  lora_data[0] = 60;
+  lora_data[1] = 25;
 
   os_runloop_once();
   if (millis() - previousMillis > interval2) {
     do_send(&sendjob);
     previousMillis = millis();
   }
-  
-  while(millis() < loopend) {
-    while(Serial1.available() > 0)
-      gps.encode(Serial1.read());
-  }
   Serial.println();
-  readGPS();
 }
 
 bool readDHT22(void) {
