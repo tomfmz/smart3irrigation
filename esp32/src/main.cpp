@@ -32,6 +32,7 @@
 #define WATERMARKPIN 34
 #define TIME_TO_DEEPSLEEP 10000000        // Time ESP32 will go to sleep (in µseconds) 
 RTC_DATA_ATTR int bootCount = 0;    // save bootCounter in non volatile memory
+RTC_DATA_ATTR lmic_t RTC_LMIC;
 
 // How often to send a packet. Note that this sketch bypasses the normal
 // LMIC duty cycle limiting, so when you change anything in this sketch
@@ -123,6 +124,42 @@ struct watermark
 };
 watermark watermark_;
 
+
+
+void SaveLMICToRTC(int deepsleep_sec)
+{
+    RTC_LMIC = LMIC;
+    // EU Like Bands
+
+    //System time is resetted after sleep. So we need to calculate the dutycycle with a resetted system time
+    unsigned long now = millis();
+#if defined(CFG_LMIC_EU_like)
+    for(int i = 0; i < MAX_BANDS; i++) {
+        ostime_t correctedAvail = RTC_LMIC.bands[i].avail - ((now/1000.0 + deepsleep_sec ) * OSTICKS_PER_SEC);
+        if(correctedAvail < 0) {
+            correctedAvail = 0;
+        }
+        RTC_LMIC.bands[i].avail = correctedAvail;
+    }
+
+    RTC_LMIC.globalDutyAvail = RTC_LMIC.globalDutyAvail - ((now/1000.0 + deepsleep_sec ) * OSTICKS_PER_SEC);
+    if(RTC_LMIC.globalDutyAvail < 0) 
+    {
+        RTC_LMIC.globalDutyAvail = 0;
+    }
+#else
+    Serial.println("No DutyCycle recalculation function!")
+#endif
+}
+
+void LoadLMICFromRTC()
+{
+    LMIC = RTC_LMIC;
+}
+
+
+
+
 void setup() {
   //-----------------------
   //------PIN inits-------
@@ -155,12 +192,12 @@ void setup() {
   //Increment boot number
   ++bootCount;
   //configure the wake up source to timer, set ESP32 to wake up every #TIME_TO_DEEPSLEEP in µs
-  esp_sleep_enable_timer_wakeup(TIME_TO_DEEPSLEEP);
-  esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_OFF);
-  if(DEBUG){
-    Serial.println("Boot number: " + String(bootCount));
-    Serial.println("Setup ESP32 to sleep for " + String(TIME_TO_DEEPSLEEP/1000000) + " Seconds");
-  }
+  // esp_sleep_enable_timer_wakeup(TIME_TO_DEEPSLEEP);
+  // esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_OFF);
+  // if(DEBUG){
+  //   Serial.println("Boot number: " + String(bootCount));
+  //   Serial.println("Setup ESP32 to sleep for " + String(TIME_TO_DEEPSLEEP/1000000) + " Seconds");
+  // }
 
   //--------------------------
   //------LoRaWAN setup-------
@@ -169,6 +206,11 @@ void setup() {
   os_init();
   // Reset the MAC state. Session and pending data transfers will be discarded.
   LMIC_reset();
+  // Load the LoRa information from RTC
+  if (RTC_LMIC.seqnoUp != 0)
+  { 
+      LoadLMICFromRTC();
+  }
   //LMIC specific parameters
   LMIC_setAdrMode(0);
   LMIC_setLinkCheckMode(0);
@@ -201,23 +243,29 @@ void setup() {
 bool GOTO_DEEPSLEEP = false;
 
 void loop() {
-   os_runloop_once();
-    int seconds = 300;
-    if(!os_queryTimeCriticalJobs(ms2osticksRound( (seconds*1000) )))
+  os_runloop_once();
+  int seconds = 10;
+  if(!os_queryTimeCriticalJobs(ms2osticksRound( (seconds*1000) )))
+  {
+    Serial.println("Can sleep");
+    if(GOTO_DEEPSLEEP == true)
     {
-        Serial.println("Can sleep");
-        if(GOTO_DEEPSLEEP == true)
-        {
-            if(DEBUG)Serial.println("Going to sleep now");
-            Serial.flush();
-            Serial1.flush();
-            Serial2.flush();
-            ds1603LSerial.flush();
-            smtSerial.flush();
-            delay(200);
-            esp_deep_sleep_start();
-        }
+      SaveLMICToRTC(seconds);
+      Serial.flush();
+      Serial1.flush();
+      Serial2.flush();
+      ds1603LSerial.flush();
+      smtSerial.flush();
+      delay(200);
+      if(DEBUG){
+        Serial.println("Boot number: " + String(bootCount));
+        Serial.println("Setup ESP32 to sleep for " + String(seconds) + " Seconds");
+        Serial.println("Going to sleep now");
+      }
+      esp_sleep_enable_timer_wakeup(seconds * 1000000);
+      esp_deep_sleep_start();
     }
+  }
 }
 
 bool readDHT22(void) {
