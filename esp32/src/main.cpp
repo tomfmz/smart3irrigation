@@ -141,7 +141,6 @@ void loop() {
     do_send(&sendjob);
     previousMillis = millis();
   }
-  Serial.println();
 }
 
 bool readDHT22(void) {
