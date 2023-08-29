@@ -197,17 +197,28 @@ void setup() {
   digitalWrite(MOSFET_PUMPE, LOW);  
   digitalWrite(MOSFET_DS1603, LOW);
   digitalWrite(FLOW_ON_OFF, LOW);
-  if(DEBUG)Serial.println("Going to sleep now");
-  Serial.flush();
-  Serial1.flush();
-  Serial2.flush();
-  ds1603LSerial.flush();
-  smtSerial.flush();
-  delay(200);
-  esp_deep_sleep_start();
 }
 
+bool GOTO_DEEPSLEEP = false;
+
 void loop() {
+   os_runloop_once();
+    int seconds = 300;
+    if(!os_queryTimeCriticalJobs(ms2osticksRound( (seconds*1000) )))
+    {
+        Serial.println("Can sleep");
+        if(GOTO_DEEPSLEEP == true)
+        {
+            if(DEBUG)Serial.println("Going to sleep now");
+            Serial.flush();
+            Serial1.flush();
+            Serial2.flush();
+            ds1603LSerial.flush();
+            smtSerial.flush();
+            delay(200);
+            esp_deep_sleep_start();
+        }
+    }
 }
 
 bool readDHT22(void) {
@@ -386,6 +397,7 @@ void onEvent (ev_t ev) {
             break;
             break;
         case EV_TXCOMPLETE:
+            GOTO_DEEPSLEEP = true;
             Serial.println(F("EV_TXCOMPLETE (includes waiting for RX windows)"));
             if (LMIC.txrxFlags & TXRX_ACK)
               Serial.println(F("Received ack"));
