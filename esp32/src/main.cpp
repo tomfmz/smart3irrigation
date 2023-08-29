@@ -155,12 +155,12 @@ void setup() {
   //Increment boot number
   ++bootCount;
   //configure the wake up source to timer, set ESP32 to wake up every #TIME_TO_DEEPSLEEP in µs
-  esp_sleep_enable_timer_wakeup(TIME_TO_DEEPSLEEP);
-  esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_OFF);
-  if(DEBUG){
-    Serial.println("Boot number: " + String(bootCount));
-    Serial.println("Setup ESP32 to sleep for " + String(TIME_TO_DEEPSLEEP/1000000) + " Seconds");
-  }
+  // esp_sleep_enable_timer_wakeup(TIME_TO_DEEPSLEEP);
+  // esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_OFF);
+  // if(DEBUG){
+  //   Serial.println("Boot number: " + String(bootCount));
+  //   Serial.println("Setup ESP32 to sleep for " + String(TIME_TO_DEEPSLEEP/1000000) + " Seconds");
+  // }
 
   //--------------------------
   //------LoRaWAN setup-------
@@ -202,19 +202,24 @@ bool GOTO_DEEPSLEEP = false;
 
 void loop() {
    os_runloop_once();
-    int seconds = 300;
+    int seconds = 10;
     if(!os_queryTimeCriticalJobs(ms2osticksRound( (seconds*1000) )))
     {
         Serial.println("Can sleep");
         if(GOTO_DEEPSLEEP == true)
         {
-            if(DEBUG)Serial.println("Going to sleep now");
             Serial.flush();
             Serial1.flush();
             Serial2.flush();
             ds1603LSerial.flush();
             smtSerial.flush();
             delay(200);
+            if(DEBUG){
+              Serial.println("Boot number: " + String(bootCount));
+              Serial.println("Setup ESP32 to sleep for " + String(TIME_TO_DEEPSLEEP/1000000) + " Seconds");
+              Serial.println("Going to sleep now");
+            }
+            esp_sleep_enable_timer_wakeup(seconds * 1000000);
             esp_deep_sleep_start();
         }
     }
