@@ -138,7 +138,6 @@ void setup() {
   pinMode(FLOW_ON_OFF, OUTPUT);
 
   //write sensor on/off
-  if (bootCount%10==0) digitalWrite(MOSFET_GPS, HIGH);
   digitalWrite(MOSFET_NANO_SMT_WATERMARK, HIGH);
   digitalWrite(MOSFET_PUMPE, LOW);  
   digitalWrite(MOSFET_DS1603, LOW);
@@ -149,23 +148,6 @@ void setup() {
   //-----------------------
   // Hardwareserials
   Serial.begin(HWSERIAL_BAUD);
-  Serial1.begin(9600, SERIAL_8N1, 12, 14); // funktioniert
-  Serial2.begin(9600, SERIAL_8N1, 16, 17); // funktioniert
-  //Softwareserial
-  smtSerial.begin(SWSERIAL_BAUD, SWSERIAL_8N1, NANO_SWSERIAL_RX,NANO_SWSERIAL_TX, false);
-  if (!smtSerial) { // If the object did not initialize, then its configuration is invalid
-    if(DEBUG)Serial.println("Invalid EspSoftwareSerial pin configuration, check config"); 
-    while (1) { // Don't continue with invalid configuration
-      delay (1000);
-    }
-  }
-  ds1603LSerial.begin(SWSERIAL_BAUD, SWSERIAL_8N1, DS1603L_RX, DS1603L_TX, false);
-  if (!ds1603LSerial) { // If the object did not initialize, then its configuration is invalid
-    if(DEBUG)Serial.println("Invalid EspSoftwareSerial pin configuration, check config"); 
-    while (1) { // Don't continue with invalid configuration
-      delay (1000);
-    }
-  }
 
   //------------------------
   //----DeepSleep Setup-----
@@ -183,14 +165,14 @@ void setup() {
   //--------------------------
   //------LoRaWAN setup-------
   //--------------------------
-  // // LMIC init
-  // os_init();
-  // // Reset the MAC state. Session and pending data transfers will be discarded.
-  // LMIC_reset();
-  // //LMIC specific parameters
-  // LMIC_setAdrMode(0);
-  // LMIC_setLinkCheckMode(0);
-  // LMIC_setClockError(MAX_CLOCK_ERROR * 1 / 100);
+  // LMIC init
+  os_init();
+  // Reset the MAC state. Session and pending data transfers will be discarded.
+  LMIC_reset();
+  //LMIC specific parameters
+  LMIC_setAdrMode(0);
+  LMIC_setLinkCheckMode(0);
+  LMIC_setClockError(MAX_CLOCK_ERROR * 1 / 100);
 
   delay(500);  // allow things to settle
   
@@ -198,51 +180,13 @@ void setup() {
   //------Read Sensors-------
   //-------------------------
   //DHT22
-  dht.begin();
-  delay(100);
-  readDHT22();
-  lora_data[0] = (uint8_t)dht22_.humidity;
-  lora_data[1] = (uint8_t)dht22_.temp;
-  //Truebner SMT100
-  readSMT100();
-  lora_data[2] = (uint8_t)smt100_.volwater;
-  lora_data[3] = (uint8_t)(smt100_.voltage*10);
-  //Irrometer Watermark
-  watermark_.adc = analogRead(WATERMARKPIN);
-  watermark_.soilwatertension = watermark_.adc/4095;
-  lora_data[4] = highByte(watermark_.adc);
-  lora_data[5] = lowByte(watermark_.adc);
-  //Ultrasonic waterlevel
-  digitalWrite(MOSFET_DS1603, HIGH);
-  delay(100);
-  ds1603.begin();
-  delay(100);
-  readDS1603L();
-  digitalWrite(MOSFET_DS1603, LOW);
-  lora_data[6] = highByte(ds1603L_.waterlvl);
-  lora_data[7] = lowByte(ds1603L_.waterlvl);
-  //Waterflow
-  //Die Funktion flow_handler() als Interrupthandler für steigende Flanken des Durchflusssensors festlegen
-  digitalWrite(FLOW_ON_OFF, HIGH);
-  attachInterrupt(digitalPinToInterrupt(FLOW), flow_handler, FALLING);
-  readFlow();
-  lora_data[8] = highByte(flowsens_.waterflow);
-  lora_data[9] = lowByte(flowsens_.waterflow);
-
-  digitalWrite(MOSFET_PUMPE, !digitalRead(MOSFET_PUMPE));
-  
-  if (bootCount%10==0) {
-     while(Serial1.available() > 0)
-      gps.encode(Serial1.read());
-    Serial.println();
-    readGPS();
-  }
-
+  lora_data[0] = 60;
+  lora_data[1] = 25;
   //-----------------------------------
   //------send LoRaWAN Dataframe-------
   //-----------------------------------
-  // os_runloop_once();
-  // do_send(&sendjob);
+  os_runloop_once();
+  do_send(&sendjob);
 
   //----------------------------
   //------enter DeepSleep-------
