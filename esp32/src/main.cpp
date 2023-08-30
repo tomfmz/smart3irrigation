@@ -113,7 +113,7 @@ void setup() {
   readDS1603L();
   digitalWrite(MOSFET_DS1603, LOW);
   uint8_t tank_content = 742*292*(ds1603L_.waterlvl-8)/1000000; //Wasservolumen
-  uint8_t tank_content_percentage = tank_content/105;
+  uint8_t tank_content_percentage = (tank_content/105)*100;
   if (DEBUG) Serial.println("Tankinhalt: " + String(tank_content) + " L - " + String(tank_content_percentage) + " %");
   lora_data[10] = tank_content;
   lora_data[11] = tank_content_percentage;
