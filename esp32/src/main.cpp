@@ -21,7 +21,7 @@ void readDS1603L(void);
 void readGPS(void);
 void readWatermark(void);
 
-int timestamp = millis();
+unsigned long timestamp = millis();
 void setup() {
   //-----------------------
   //------PIN inits-------
