@@ -163,7 +163,6 @@ void setup() {
 
   //pull down all output pins
   digitalWrite(MOSFET_GPS, LOW);
-  delay(5000);
   digitalWrite(MOSFET_NANO_SMT_WATERMARK, LOW);
   digitalWrite(MOSFET_PUMPE, LOW);  
   digitalWrite(MOSFET_DS1603, LOW);
