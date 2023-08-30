@@ -175,7 +175,8 @@ bool GOTO_DEEPSLEEP = false;
 
 void loop() {
   os_runloop_once();
-  if(!os_queryTimeCriticalJobs(ms2osticksRound( (TIME_TO_DEEPSLEEP*1000) ))) {
+  int seconds = 30;
+  if(!os_queryTimeCriticalJobs(ms2osticksRound( (seconds*1000) ))) {
     //------------------------
     //-------DeepSleep--------
     //------------------------
@@ -185,10 +186,10 @@ void loop() {
       Serial2.flush();
       smtSerial.flush();
       if(DEBUG){
-        Serial.println("Setup ESP32 to sleep for " + String(TIME_TO_DEEPSLEEP/1000000) + " Seconds");
+        Serial.println("Setup ESP32 to sleep for " + String(seconds/1000000) + " Seconds");
         Serial.println("Going to sleep now");
       }
-      esp_sleep_enable_timer_wakeup(TIME_TO_DEEPSLEEP * 1000000);
+      esp_sleep_enable_timer_wakeup(seconds * 1000000);
       esp_deep_sleep_start();
     }
   }
