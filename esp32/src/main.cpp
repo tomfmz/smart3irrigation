@@ -67,7 +67,7 @@ void readGPS(void);
 void do_send(osjob_t* j);
 void onEvent (ev_t ev);
 
-static uint8_t lora_data[7];
+static uint8_t lora_data[13];
 static osjob_t sendjob;
 
 static const u1_t PROGMEM APPEUI[8]={0x00, 0x12, 0x25, 0xFF, 0xFF, 0x41, 0x40, 0xA8}; //a84041ffff251200 Gateway id
@@ -191,6 +191,7 @@ void setup() {
   //------------------------
   //Increment boot number
   ++bootCount;
+  if (DEBUG) Serial.println("Boot number: " + String(bootCount));
   //configure the wake up source to timer, set ESP32 to wake up every #TIME_TO_DEEPSLEEP in µs
   // esp_sleep_enable_timer_wakeup(TIME_TO_DEEPSLEEP);
   // esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_OFF);
@@ -222,8 +223,10 @@ void setup() {
   //------Read Sensors-------
   //-------------------------
   //DHT22
-  lora_data[0] = 60;
-  lora_data[1] = 25;
+  for (int i = 0; i < 13; i++)
+  {
+    lora_data[i] = i+bootCount;
+  }
   //-----------------------------------
   //------send LoRaWAN Dataframe-------
   //-----------------------------------
@@ -244,13 +247,9 @@ bool GOTO_DEEPSLEEP = false;
 
 void loop() {
   os_runloop_once();
-  int seconds = 10;
-  if(!os_queryTimeCriticalJobs(ms2osticksRound( (seconds*1000) )))
-  {
-    Serial.println("Can sleep");
-    if(GOTO_DEEPSLEEP == true)
-    {
-      SaveLMICToRTC(seconds);
+  int seconds = 30;
+  if(!os_queryTimeCriticalJobs(ms2osticksRound( (seconds*1000) ))) {
+    if(GOTO_DEEPSLEEP == true){
       Serial.flush();
       Serial1.flush();
       Serial2.flush();
@@ -258,8 +257,7 @@ void loop() {
       smtSerial.flush();
       delay(200);
       if(DEBUG){
-        Serial.println("Boot number: " + String(bootCount));
-        Serial.println("Setup ESP32 to sleep for " + String(seconds) + " Seconds");
+        Serial.println("Setup ESP32 to sleep for " + seconds + " Seconds");
         Serial.println("Going to sleep now");
       }
       esp_sleep_enable_timer_wakeup(seconds * 1000000);
