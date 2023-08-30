@@ -94,15 +94,17 @@ void setup() {
   lora_data[2] = lowByte(temp_float);
   //Truebner SMT100
   readSMT100();
-  lora_data[3] = (uint8_t)smt100_.volwater;
-  lora_data[4] = (uint8_t)(smt100_.voltage*10);
+  uint16_t volwater_float = smt100_.volwater*100;
+  lora_data[3] = highByte(volwater_float);
+  lora_data[4] = lowByte(volwater_float);
+  lora_data[5] = (uint8_t)(smt100_.voltage*10);
   temp_float = smt100_.temp*100;
-  lora_data[5] = highByte(temp_float);
-  lora_data[6] = lowByte(temp_float);
+  lora_data[6] = highByte(temp_float);
+  lora_data[7] = lowByte(temp_float);
   //Irrometer Watermark
   readWatermark();
-  lora_data[7] = highByte(watermark_.soilwatertension);
-  lora_data[8] = lowByte(watermark_.soilwatertension);
+  lora_data[8] = highByte(watermark_.soilwatertension);
+  lora_data[9] = lowByte(watermark_.soilwatertension);
   //Ultrasonic waterlevel
   digitalWrite(MOSFET_DS1603, HIGH);
   delay(100);
@@ -110,10 +112,10 @@ void setup() {
   delay(100);
   readDS1603L();
   digitalWrite(MOSFET_DS1603, LOW);
-  uint8_t tank_content = 105 * ds1603L_.waterlvl/500;
-  uint8_t tank_content_percentage = (ds1603L_.waterlvl/500)*100;
-  lora_data[9] = tank_content;
-  lora_data[10] = tank_content_percentage;
+  uint8_t tank_content = 742*292*(ds1603L_.waterlvl-8)/1000000; //Wasservolumen
+  uint8_t tank_content_percentage = tank_content/105;
+  lora_data[10] = tank_content;
+  lora_data[11] = tank_content_percentage;
 
   //--------------WIP---------------
   //------irrigation algorithm-------
@@ -143,8 +145,8 @@ void setup() {
   }
   dailyWaterOutput = dailyWaterOutput + flow;
   digitalWrite(MOSFET_PUMPE, LOW);
-  lora_data[11] = highByte(flowsens_.waterflow);
-  lora_data[12] = lowByte(flowsens_.waterflow);
+  lora_data[12] = highByte(flowsens_.waterflow);
+  lora_data[13] = lowByte(flowsens_.waterflow);
   
   //once in a day
   if (bootCount%24==0) {
@@ -174,8 +176,7 @@ bool GOTO_DEEPSLEEP = false;
 
 void loop() {
   os_runloop_once();
-  int seconds = 30;
-  if(!os_queryTimeCriticalJobs(ms2osticksRound( (seconds*1000) ))) {
+  if(!os_queryTimeCriticalJobs(ms2osticksRound( (TIME_TO_DEEPSLEEP*1000) ))) {
     //------------------------
     //-------DeepSleep--------
     //------------------------
@@ -185,11 +186,11 @@ void loop() {
       Serial2.flush();
       smtSerial.flush();
       if(DEBUG){
-        Serial.println("Setup ESP32 to sleep for " + String(seconds/1000000) + " Seconds");
+        Serial.println("Setup ESP32 to sleep for " + String(TIME_TO_DEEPSLEEP/1000000) + " Seconds");
         Serial.println("Going to sleep now");
       }
       LMIC_shutdown();
-      esp_sleep_enable_timer_wakeup(seconds * 1000000);
+      esp_sleep_enable_timer_wakeup(TIME_TO_DEEPSLEEP * 1000000);
       esp_deep_sleep_start();
     }
   }
