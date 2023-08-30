@@ -112,11 +112,13 @@ void setup() {
   delay(100);
   readDS1603L();
   digitalWrite(MOSFET_DS1603, LOW);
-  uint8_t tank_content = 742*292*(ds1603L_.waterlvl-8)/1000000; //Wasservolumen
-  uint8_t tank_content_percentage = (tank_content/105)*100;
+  float tank_content = 742*292*(ds1603L_.waterlvl-8)/1000000; //Wasservolumen
+  float tank_content_percentage = (tank_content/105)*100;
   if (DEBUG) Serial.println("Tankinhalt: " + String(tank_content) + " L - " + String(tank_content_percentage) + " %");
-  lora_data[10] = tank_content;
-  lora_data[11] = tank_content_percentage;
+  uint16_t tank_content_float = smt100_.volwater*100;
+  lora_data[10] = highByte(tank_content_float);
+  lora_data[11] = lowByte(tank_content_float);
+  lora_data[12] = (uint8_t)tank_content_percentage;
 
   //--------------WIP---------------
   //------irrigation algorithm-------
@@ -146,8 +148,8 @@ void setup() {
   }
   dailyWaterOutput = dailyWaterOutput + flow;
   digitalWrite(MOSFET_PUMPE, LOW);
-  lora_data[12] = highByte(flowsens_.waterflow);
-  lora_data[13] = lowByte(flowsens_.waterflow);
+  lora_data[13] = highByte(flowsens_.waterflow);
+  lora_data[14] = lowByte(flowsens_.waterflow);
   
   //once in a day
   if (bootCount%24==0) {
