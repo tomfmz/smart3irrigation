@@ -257,7 +257,7 @@ void loop() {
       smtSerial.flush();
       delay(200);
       if(DEBUG){
-        Serial.println("Setup ESP32 to sleep for " + seconds + " Seconds");
+        Serial.println((String)"Setup ESP32 to sleep for " + seconds + " Seconds");
         Serial.println("Going to sleep now");
       }
       esp_sleep_enable_timer_wakeup(seconds * 1000000);
