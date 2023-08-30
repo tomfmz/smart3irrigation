@@ -115,7 +115,7 @@ void setup() {
   float tank_content = 734*284*(ds1603L_.waterlvl-8)/1000000.0; //Wasservolumen
   float tank_content_percentage = (tank_content/105)*100;
   if (DEBUG) Serial.println("Tankinhalt: " + String(tank_content) + " L - " + String(tank_content_percentage) + " %");
-  uint16_t tank_content_float = smt100_.volwater*100;
+  uint16_t tank_content_float = tank_content*100;
   lora_data[10] = highByte(tank_content_float);
   lora_data[11] = lowByte(tank_content_float);
   lora_data[12] = (uint8_t)tank_content_percentage;
