@@ -45,7 +45,7 @@ RTC_DATA_ATTR int dailyWaterOutput = 0;   // save dailyWaterOutput in non volati
 void do_send(osjob_t* j);
 void onEvent (ev_t ev);
 
-static uint8_t lora_data[14];
+static uint8_t lora_data[15];
 static osjob_t sendjob;
 
 static const u1_t PROGMEM APPEUI[8]={0x00, 0x12, 0x25, 0xFF, 0xFF, 0x41, 0x40, 0xA8}; //a84041ffff251200 Gateway id
