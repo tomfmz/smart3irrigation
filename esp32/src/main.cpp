@@ -21,8 +21,8 @@ void readDS1603L(void);
 void readGPS(void);
 void readWatermark(void);
 
+int timestamp = millis();
 void setup() {
-
   //-----------------------
   //------PIN inits-------
   //-----------------------
@@ -114,6 +114,7 @@ void setup() {
   digitalWrite(MOSFET_DS1603, LOW);
   uint8_t tank_content = 742*292*(ds1603L_.waterlvl-8)/1000000; //Wasservolumen
   uint8_t tank_content_percentage = tank_content/105;
+  if (DEBUG) Serial.println("Tankinhalt: " + String(tank_content) + " L - " + String(tank_content_percentage) + " %".);
   lora_data[10] = tank_content;
   lora_data[11] = tank_content_percentage;
 
@@ -190,9 +191,13 @@ void loop() {
         Serial.println("Going to sleep now");
       }
       LMIC_shutdown();
-      esp_sleep_enable_timer_wakeup(TIME_TO_DEEPSLEEP * 1000000);
+      esp_sleep_enable_timer_wakeup(TIME_TO_DEEPSLEEP * 1000000 - (millis()/1000));
       esp_deep_sleep_start();
     }
+  }
+  if ((millis()-timestamp) > 10000) {
+    if (DEBUG)Serial.println("ESP connection lost");
+    GOTO_DEEPSLEEP = true;
   }
 }
 
