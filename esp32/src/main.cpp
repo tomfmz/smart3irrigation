@@ -195,7 +195,7 @@ void loop() {
       esp_deep_sleep_start();
     }
   }
-  if ((millis()-timestamp) > 10000) {
+  if ((millis()-timestamp) > 60000) {
     if (DEBUG)Serial.println("No LoRaWAN connetion");
     GOTO_DEEPSLEEP = true;
   }
