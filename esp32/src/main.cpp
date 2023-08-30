@@ -64,18 +64,8 @@ void setup() {
     }
   }
 
-  //------------------------
-  //----DeepSleep Setup-----
-  //------------------------
   //Increment boot number
   ++bootCount;
-  //configure the wake up source to timer, set ESP32 to wake up every #TIME_TO_DEEPSLEEP in µs
-  esp_sleep_enable_timer_wakeup(TIME_TO_DEEPSLEEP);
-  esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_OFF);
-  if(DEBUG){
-    Serial.println("Boot number: " + String(bootCount));
-    Serial.println("Setup ESP32 to sleep for " + String(TIME_TO_DEEPSLEEP/1000000) + " Seconds");
-  }
 
   //--------------------------
   //------LoRaWAN setup-------
@@ -130,7 +120,7 @@ void setup() {
   //---------------------------------
   int irrigation = 0; 
   if ((tank_content>=11) && (dailyWaterOutput<=20000) && ((smt100_.volwater<20)&&(watermark_.soilwatertension<=20)) ){
-    irrigation = 5000;
+    irrigation = 0;
     if (DEBUG)Serial.println("Gießen!!!");
   }
 
@@ -169,12 +159,8 @@ void setup() {
   //-----------------------------------
   //------send LoRaWAN Dataframe-------
   //-----------------------------------
-  os_runloop_once();
   do_send(&sendjob);
 
-  //----------------------------
-  //------enter DeepSleep-------
-  //----------------------------
   //pull down all output pins
   digitalWrite(MOSFET_GPS, LOW);
   delay(5000);
@@ -182,17 +168,30 @@ void setup() {
   digitalWrite(MOSFET_PUMPE, LOW);  
   digitalWrite(MOSFET_DS1603, LOW);
   digitalWrite(FLOW_DHT_ON_OFF, LOW);
-  if(DEBUG)Serial.println("Going to sleep now");
-  Serial.flush();
-  Serial1.flush();
-  Serial2.flush();
-  //ds1603LSerial.flush();
-  smtSerial.flush();
   delay(200);
-  esp_deep_sleep_start();
 }
 
+bool GOTO_DEEPSLEEP = false;
+
 void loop() {
+  os_runloop_once();
+  if(!os_queryTimeCriticalJobs(ms2osticksRound( (TIME_TO_DEEPSLEEP*1000) ))) {
+    //------------------------
+    //-------DeepSleep--------
+    //------------------------
+    if(GOTO_DEEPSLEEP == true){
+      Serial.flush();
+      Serial1.flush();
+      Serial2.flush();
+      smtSerial.flush();
+      if(DEBUG){
+        Serial.println("Setup ESP32 to sleep for " + String(TIME_TO_DEEPSLEEP/1000000) + " Seconds");
+        Serial.println("Going to sleep now");
+      }
+      esp_sleep_enable_timer_wakeup(TIME_TO_DEEPSLEEP * 1000000);
+      esp_deep_sleep_start();
+    }
+  }
 }
 
 bool readDHT22(void) {
@@ -382,6 +381,7 @@ void onEvent (ev_t ev) {
             break;
             break;
         case EV_TXCOMPLETE:
+            GOTO_DEEPSLEEP == true;
             Serial.println(F("EV_TXCOMPLETE (includes waiting for RX windows)"));
             if (LMIC.txrxFlags & TXRX_ACK)
               Serial.println(F("Received ack"));

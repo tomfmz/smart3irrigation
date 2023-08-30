@@ -29,7 +29,7 @@
 #define LORA_DIO1 2
 #define LORA_DIO2 15
 #define WATERMARKPIN 34
-#define TIME_TO_DEEPSLEEP 10000000        // Time ESP32 will go to sleep (in µseconds) 3600000000 µS = 1h for debug 10s (10000000)
+#define TIME_TO_DEEPSLEEP 30        // Time ESP32 will go to sleep (in s) 
 RTC_DATA_ATTR int bootCount = 0;          // save bootCounter in non volatile memory
 RTC_DATA_ATTR int dailyWaterOutput = 0;   // save dailyWaterOutput in non volatile memory
 
