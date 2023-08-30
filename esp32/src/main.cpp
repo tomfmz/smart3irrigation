@@ -196,7 +196,7 @@ void loop() {
     }
   }
   if ((millis()-timestamp) > 10000) {
-    if (DEBUG)Serial.println("ESP connection lost");
+    if (DEBUG)Serial.println("No LoRaWAN connetion");
     GOTO_DEEPSLEEP = true;
   }
 }
