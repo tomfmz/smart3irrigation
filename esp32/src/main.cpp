@@ -112,7 +112,7 @@ void setup() {
   delay(100);
   readDS1603L();
   digitalWrite(MOSFET_DS1603, LOW);
-  float tank_content = 742*292*(ds1603L_.waterlvl-8)/1000000; //Wasservolumen
+  float tank_content = 734*284*(ds1603L_.waterlvl-8)/1000000.0; //Wasservolumen
   float tank_content_percentage = (tank_content/105)*100;
   if (DEBUG) Serial.println("Tankinhalt: " + String(tank_content) + " L - " + String(tank_content_percentage) + " %");
   uint16_t tank_content_float = smt100_.volwater*100;
