@@ -189,6 +189,7 @@ void loop() {
         Serial.println("Setup ESP32 to sleep for " + String(seconds/1000000) + " Seconds");
         Serial.println("Going to sleep now");
       }
+      LMIC_shutdown();
       esp_sleep_enable_timer_wakeup(seconds * 1000000);
       esp_deep_sleep_start();
     }
@@ -382,7 +383,7 @@ void onEvent (ev_t ev) {
             break;
             break;
         case EV_TXCOMPLETE:
-            GOTO_DEEPSLEEP == true;
+            GOTO_DEEPSLEEP = true;
             Serial.println(F("EV_TXCOMPLETE (includes waiting for RX windows)"));
             if (LMIC.txrxFlags & TXRX_ACK)
               Serial.println(F("Received ack"));
