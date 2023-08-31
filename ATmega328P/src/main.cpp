@@ -53,6 +53,7 @@ void loop() {
   //wait for the ESP to sent a request
   recvWithStartEndMarkers();
   myCommand = convertToString(receivedChars, numChars);
+  
 
   //handle sent SDI-12 request
   if (newData){
@@ -61,9 +62,9 @@ void loop() {
     while (mySDI12.available()) {  // write the response to serial
       Serial.write(mySDI12.read());
     }
+    //Serial.write("1+42+1337+42+1337+42");
     newData = false;
   }
-  
 }
 
 String convertToString(char* a, int size){
