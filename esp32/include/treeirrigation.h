@@ -67,6 +67,9 @@
 #define LORA_DIO1 2
 #define LORA_DIO2 15
 
+// LoRa-Timeoutintervall [ms]
+#define LORA_TIMEOUT 60000
+
 // ESP-Pin, an den das Signal des Watermark angeschlossen ist
 #define WATERMARKPIN 34
 
