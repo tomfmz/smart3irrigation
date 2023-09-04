@@ -176,8 +176,9 @@ void setup() {
   dailyWaterOutput = dailyWaterOutput + flow;
   
   // Im aktuellen Bewässerungsgang ausgebrachte Wassermenge in den LoRa-Buffer schreiben
-  lora_data[13] = highByte(flowsens_.waterflow);
-  lora_data[14] = lowByte(flowsens_.waterflow);
+  uint16_t irrigation_volume_int = flowsens_.waterflow*100;
+  lora_data[13] = highByte(irrigation_volume_int);
+  lora_data[14] = lowByte(irrigation_volume_int);
   
   // Alle 24 Stunden wird die tägliche Bewässerungsmenge sowie der Bootvorgangszähler auf 0 zurückgesetzt 
   if ((bootCount * TIME_TO_DEEPSLEEP) >= 86400) {
