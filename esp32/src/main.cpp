@@ -196,11 +196,11 @@ void loop() {
   os_runloop_once();
   
   // Überprüfen, ob im Zeitraum des nächsten Deepsleeps Daten gesendet werden sollen
-  if(!os_queryTimeCriticalJobs(ms2osticksRound( (TIME_TO_DEEPSLEEP*1000) ))) {
+  // if(!os_queryTimeCriticalJobs(ms2osticksRound( (TIME_TO_DEEPSLEEP*1000) ))) {
     
-    // Wenn in dem Zeitraum keine Daten gesendet werden sollen und alle aktuellen Aufgaben abgearbeitet wurden Deepsleep initiieren
-    GOTO_DEEPSLEEP_TRANS_SUCCESS = true;
-  }
+  //   // Wenn in dem Zeitraum keine Daten gesendet werden sollen und alle aktuellen Aufgaben abgearbeitet wurden Deepsleep initiieren
+  //   GOTO_DEEPSLEEP_TRANS_SUCCESS = true;
+  // }
 
   // Wenn die Übertragung der gemessenen Daten nicht innerhalb des definierten Zeitintervalls erfolgen konnte, von einem
   // Verbindungsverlust ausgehen und ESP wieder in den Deepsleep versetzen
@@ -209,7 +209,7 @@ void loop() {
     GOTO_DEEPSLEEP_TIMEOUT = true;
   }
 
-  if(GOTO_DEEPSLEEP_TIMEOUT == true || GOTO_DEEPSLEEP_TRANS_SUCCESS){
+  if(GOTO_DEEPSLEEP_TIMEOUT || GOTO_DEEPSLEEP_TRANS_SUCCESS){
       Serial.flush();
       Serial1.flush();
       Serial2.flush();
@@ -452,7 +452,7 @@ void onEvent (ev_t ev) {
             break;
             break;
         case EV_TXCOMPLETE:
-            GOTO_DEEPSLEEP = true;
+            GOTO_DEEPSLEEP_TRANS_SUCCESS = true;
             Serial.println(F("EV_TXCOMPLETE (includes waiting for RX windows)"));
             if (LMIC.txrxFlags & TXRX_ACK)
               Serial.println(F("Received ack"));

@@ -74,7 +74,7 @@
 #define WATERMARKPIN 34
 
 // Intervall, in dem der ESP aus dem Deepsleep aufgeweckt wird und Messungen durchführt [s]
-#define TIME_TO_DEEPSLEEP 30
+#define TIME_TO_DEEPSLEEP 1800
 
 // Umrechnungsfaktor für die ml pro Umdrehung des Durchflussensorschaufelrades definieren (experimentell ermittelt)
 const double mls_per_count = 3.0382;
