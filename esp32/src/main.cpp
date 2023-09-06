@@ -205,7 +205,7 @@ void loop() {
   // Wenn die Übertragung der gemessenen Daten nicht innerhalb des definierten Zeitintervalls erfolgen konnte, von einem
   // Verbindungsverlust ausgehen und ESP wieder in den Deepsleep versetzen
   if (millis() > LORA_TIMEOUT) {
-    if (DEBUG)Serial.println("No LoRaWAN connetion");
+    if (DEBUG)Serial.println("No LoRaWAN connection");
     GOTO_DEEPSLEEP_TIMEOUT = true;
   }
 
