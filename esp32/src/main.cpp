@@ -226,17 +226,7 @@ void loop() {
 }
 
 // Funktion für das Auslesen des Temperatur-Luftfeuchtigkeitssensors
-void readDHT22(void) {
-  float humidity = NAN;
-  if (DEBUG)
-    Serial.print("Reading DHT");
-  while (isnan(humidity)) {
-    delay(3000);
-    humidity = dht.readHumidity();
-    if (DEBUG)
-      Serial.print(".");
-  }
-    
+void readDHT22(void) { 
   dht22_.humidity = dht.readHumidity();    // Lesen der Luftfeuchtigkeit und speichern in die Variable h
   dht22_.temp = dht.readTemperature(); // Lesen der Temperatur in °C und speichern in die Variable t
   if (DEBUG){
