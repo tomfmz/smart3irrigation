@@ -80,7 +80,7 @@
 const double mls_per_count = 3.0382;
 
 // Wasserausbringsmenge für einen Bewässerungsgang [L]
-float irrigation_volume = 5.0;
+float irrigation_volume = 0.0;
 
 // Maximale tägliche Bewässerungsmenge [L]
 float max_daily_irrigation = 20.0;

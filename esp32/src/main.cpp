@@ -59,9 +59,6 @@ void setup() {
 
   // Die Funktion flow_handler() als Interrupthandler für steigende Flanken des Durchflusssensors festlegen
   attachInterrupt(digitalPinToInterrupt(FLOW), flow_handler, FALLING);
-
-  // Temperatur-Feuchtigkeitssensor-Signalanschlusspin als Input-Pin konfigurieren
-  //pinMode(DHTPIN, INPUT_PULLUP);
   
   // Stromversorgungspin für Durchfluss- und Temperatur-Feuchtigkeitssensor als Output-Pin konfigurieren
   pinMode(FLOW_DHT_ON_OFF, OUTPUT);
@@ -84,11 +81,11 @@ void setup() {
   ++bootCount;
 
   // LoRaWAN-Setup
-  // os_init();
-  // LMIC_reset();
-  // LMIC_setAdrMode(0);
-  // LMIC_setLinkCheckMode(0);
-  // LMIC_setClockError(MAX_CLOCK_ERROR * 1 / 100);
+  os_init();
+  LMIC_reset();
+  LMIC_setAdrMode(0);
+  LMIC_setLinkCheckMode(0);
+  LMIC_setClockError(MAX_CLOCK_ERROR * 1 / 100);
     
   //DHT22 auslesen
   digitalWrite(FLOW_DHT_ON_OFF, HIGH);
