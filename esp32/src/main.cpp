@@ -270,25 +270,29 @@ double readFlow(void) {
 void readDS1603L(void) {
   Serial.println(F("Starting reading."));
   ds1603L_.waterlvl = ds1603.readSensor();       
-  byte sensorStatus = ds1603.getStatus();        
-  switch (sensorStatus) {                        
-    case DS1603L_NO_SENSOR_DETECTED:             
-      Serial.println(F("No sensor detected (yet). If no sensor after 1 second, check whether your connections are good."));
-      break;
+  byte sensorStatus = ds1603.getStatus();
+  while (sensorStatus == DS1603L_NO_SENSOR_DETECTED) {      
+    switch (sensorStatus) {                        
+      case DS1603L_NO_SENSOR_DETECTED:             
+        Serial.println(F("No sensor detected (yet). If no sensor after 1 second, check whether your connections are good."));
+        break;
 
-    case DS1603L_READING_CHECKSUM_FAIL:            
-      Serial.print(F("Data received; checksum failed. Latest level reading: "));
-      Serial.print(ds1603L_.waterlvl);
-      Serial.println(F(" mm."));
-      break;
+      case DS1603L_READING_CHECKSUM_FAIL:            
+        Serial.print(F("Data received; checksum failed. Latest level reading: "));
+        Serial.print(ds1603L_.waterlvl);
+        Serial.println(F(" mm."));
+        break;
 
-    case DS1603L_READING_SUCCESS:
-      Serial.print(F("Reading success. Water level: "));
-      Serial.print(ds1603L_.waterlvl);
-      Serial.println(F(" mm."));
-      break;
-  }
-
+      case DS1603L_READING_SUCCESS:
+        Serial.print(F("Reading success. Water level: "));
+        Serial.print(ds1603L_.waterlvl);
+        Serial.println(F(" mm."));
+        break;
+    }
+    delay(2000);
+    ds1603L_.waterlvl = ds1603.readSensor();
+    sensorStatus = ds1603.getStatus();
+  } 
   // Berechnung des Tankfüllstands in Litern (abzüglich der 8 mm Wandstärke des Tankbodens)
   ds1603L_.tank_content = tank_length * tank_width * (ds1603L_.waterlvl - 8) / 1000000.0;
 
