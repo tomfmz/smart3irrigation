@@ -187,7 +187,8 @@ void setup() {
 }
 
 // Variable, die auf true gesetzt wird, wenn alle Messungs-, Gieß- und Datenübertragungsvorgänge abgeschlossen wurden
-bool GOTO_DEEPSLEEP = false;
+bool GOTO_DEEPSLEEP_TIMEOUT = false;
+bool GOTO_DEEPSLEEP_TRANS_SUCCESS = false;
 
 void loop() {
 
@@ -198,13 +199,23 @@ void loop() {
   if(!os_queryTimeCriticalJobs(ms2osticksRound( (TIME_TO_DEEPSLEEP*1000) ))) {
     
     // Wenn in dem Zeitraum keine Daten gesendet werden sollen und alle aktuellen Aufgaben abgearbeitet wurden Deepsleep initiieren
-    if(GOTO_DEEPSLEEP == true){
+    GOTO_DEEPSLEEP_TRANS_SUCCESS = true;
+  }
+
+  // Wenn die Übertragung der gemessenen Daten nicht innerhalb des definierten Zeitintervalls erfolgen konnte, von einem
+  // Verbindungsverlust ausgehen und ESP wieder in den Deepsleep versetzen
+  if (millis() > LORA_TIMEOUT) {
+    if (DEBUG)Serial.println("No LoRaWAN connetion");
+    GOTO_DEEPSLEEP_TIMEOUT = true;
+  }
+
+  if(GOTO_DEEPSLEEP_TIMEOUT == true || GOTO_DEEPSLEEP_TRANS_SUCCESS){
       Serial.flush();
       Serial1.flush();
       Serial2.flush();
       smtSerial.flush();
       if(DEBUG){
-        Serial.println("Setup ESP32 to sleep for " + String(TIME_TO_DEEPSLEEP/1000000) + " Seconds");
+        Serial.println("Setup ESP32 to sleep for " + String(TIME_TO_DEEPSLEEP) + " Seconds");
         Serial.println("Going to sleep now");
       }
       
@@ -215,14 +226,6 @@ void loop() {
       esp_sleep_enable_timer_wakeup(TIME_TO_DEEPSLEEP * 1000000 - (millis()/1000));
       esp_deep_sleep_start();
     }
-  }
-
-  // Wenn die Übertragung der gemessenen Daten nicht innerhalb des definierten Zeitintervalls erfolgen konnte, von einem
-  // Verbindungsverlust ausgehen und ESP wieder in den Deepsleep versetzen
-  if (millis() > LORA_TIMEOUT) {
-    if (DEBUG)Serial.println("No LoRaWAN connetion");
-    GOTO_DEEPSLEEP = true;
-  }
 }
 
 // Funktion für das Auslesen des Temperatur-Luftfeuchtigkeitssensors
