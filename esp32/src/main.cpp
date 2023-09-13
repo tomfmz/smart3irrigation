@@ -1,316 +1,249 @@
+// Arduino-Bibliothek importieren
 #include <Arduino.h>
-#include "DHT.h"   
-#include <SoftwareSerial.h>
-#include <DS1603L.h>
-#include <TinyGPSPlus.h>
-#include <lmic.h>
-#include <hal/hal.h>
-#include <SPI.h>      
 
-#define DEBUG 1
-#define DHTPIN 27          // DHT Pin
-#define DHTTYPE DHT22
-#define NANO_SWSERIAL_TX 26
-#define NANO_SWSERIAL_RX 35
-//#define DS1603L_TX 23
-//#define DS1603L_RX 22
-#define GPS_TX 14
-#define GPS_RX 12
-#define MOSFET_PUMPE 33
-#define MOSFET_NANO_SMT_WATERMARK 4
-#define MOSFET_GPS 13
-#define MOSFET_DS1603 25
-#define FLOW 39
-#define FLOW_DHT_ON_OFF 32
-#define SWSERIAL_BAUD 9600
-#define HWSERIAL_BAUD 115200 /*!< The baud rate for the output serial port */
-#define LORA_NSS 22
-#define LORA_RST 21
-#define LORA_DIO0 5
-#define LORA_DIO1 2
-#define LORA_DIO2 15
-#define WATERMARKPIN 34
-#define TIME_TO_DEEPSLEEP 10000000        // Time ESP32 will go to sleep (in µseconds) 3600000000 µS = 1h for debug 10s (10000000)
-RTC_DATA_ATTR int bootCount = 0;          // save bootCounter in non volatile memory
-RTC_DATA_ATTR int dailyWaterOutput = 0;   // save dailyWaterOutput in non volatile memory
+// Headerdatei mit Definitionen importieren
+#include "treeirrigation.h"
 
-// How often to send a packet. Note that this sketch bypasses the normal
-// LMIC duty cycle limiting, so when you change anything in this sketch
-// (payload length, frequency, spreading factor), be sure to check if
-// this interval should not also be increased.
-// See this spreadsheet for an easy airtime and duty cycle calculator:
-// https://docs.google.com/spreadsheets/d/1voGAtQAjC1qBmaVuP1ApNKs1ekgUjavHuVQIXyYSvNc
-#define TX_INTERVAL 2000
-
+// DHT-Objektinstanz für den Temperatur-Luftfeuchtigkeitssensor erstellen
 DHT dht(DHTPIN, DHTTYPE);
 
+// Softwareserial-Objektinstanz für die UART-Verbindung zum SMT100-Bodenfeuchtigkeitssensors erstellen
 EspSoftwareSerial::UART smtSerial;
 
-//EspSoftwareSerial::UART ds1603LSerial;
-//DS1603L ds1603(ds1603LSerial);
+// DS1603L-Objektinstanz für den Ultraschall-Tankfüllstandssensor erstellen
 DS1603L ds1603(Serial2);
 
+// TinyGPSPlus-Objektinstanz für das GPS-Modul erstellen
 TinyGPSPlus gps;
 
-const double mls_per_count = 3.0382;
+// Zählervariable für die Umdrehungen des Durchflusssensor-Schaufelrades definieren
 volatile unsigned long flow_counter = 0;
-unsigned long old_counter = 0;
 
+// Deklaration der Interrupthandler-Funktion für das Durchflusssensorsignal
 void flow_handler(void);
-void readFlow(void);
-bool readDHT22(void);
+
+// Deklaration der Funktion für das Auslesen des Durchflusssensors
+double readFlow(void);
+
+// Deklaration der Funktion für das Auslesen des Temperatur-Luftfeuchtigkeitssensors
+void readDHT22(void);
+
+// Deklaration der Funktion für das Auslesen des volumetrischen Bodenfeuchtigkeitssensors
 void readSMT100(void);
+
+// Deklaration der Funktion für das Auslesen des Ultraschall-Tankfüllstandssensors
 void readDS1603L(void);
+
+// Deklaration der Funktion für das Auslesen des GPS-Moduls
 void readGPS(void);
+
+// Deklaration der Funktion für das Auslesen des Bodenwasserspannungssensors
 void readWatermark(void);
 
-//--------------------LoRaWAN-------------------
-void do_send(osjob_t* j);
-void onEvent (ev_t ev);
-
-static uint8_t lora_data[10];
-static osjob_t sendjob;
-
-static const u1_t PROGMEM APPEUI[8]={0x00, 0x12, 0x25, 0xFF, 0xFF, 0x41, 0x40, 0xA8}; //a84041ffff251200 Gateway id
-void os_getArtEui (u1_t* buf) { memcpy_P(buf, APPEUI, 8);}
-
-static const u1_t PROGMEM DEVEUI[8]={ 0xCF, 0xF5, 0x81, 0x20, 0xE1, 0x37, 0x45, 0x96 }; //964537e12081f5cf Devui vom ESP
-void os_getDevEui (u1_t* buf) { memcpy_P(buf, DEVEUI, 8);}
- 
-static const u1_t PROGMEM APPKEY[16] = { 0x70, 0xBE, 0x53, 0x6E, 0x52, 0xC3, 0xBE, 0x45, 0x0C, 0x0F, 0x88, 0xF5, 0x12, 0x0F, 0x50, 0x8B}; 
-void os_getDevKey (u1_t* buf) {  memcpy_P(buf, APPKEY, 16);}
-
-// Pin mapping
-const lmic_pinmap lmic_pins = {
-    .nss = LORA_NSS,
-    .rxtx = LMIC_UNUSED_PIN,
-    .rst = LORA_RST,
-    .dio = {LORA_DIO0, LORA_DIO1, LORA_DIO2},
-};
-//---------------------------------------------
-struct smt100
-{
-   float permittivity;
-   float volwater;
-   float temp;
-   float voltage;
-};
-smt100 smt100_;
-struct dht22
-{
-   float temp;
-   float humidity;
-};
-dht22 dht22_;
-struct ds1603L
-{
-   uint16_t waterlvl;
-};
-ds1603L ds1603L_;
-
-struct flowsens
-{
-   uint16_t waterflow;
-};
-flowsens flowsens_;
-
-struct watermark
-{
-   uint16_t adc;
-   uint16_t soilwatertension;
-};
-watermark watermark_;
-
+// Setup-Funktion
 void setup() {
+  // Alle 24 Stunden wird die tägliche Bewässerungsmenge sowie der Bootvorgangszähler auf 0 zurückgesetzt 
+  if ((bootCount * TIME_TO_DEEPSLEEP) >= 86400) {
+    dailyWaterOutput = 0;
+    bootCount = 0;
+  }
 
-  //-----------------------
-  //------PIN inits-------
-  //-----------------------
-  //assing MOSFET gate pins
+  // MOSFET-Gate-Pins als Output-Pins konfigurieren
   pinMode(MOSFET_GPS, OUTPUT);
   pinMode(MOSFET_NANO_SMT_WATERMARK, OUTPUT);
   pinMode(MOSFET_PUMPE, OUTPUT);
   pinMode(MOSFET_DS1603, OUTPUT);
-  pinMode(FLOW, INPUT);
-  //Die Funktion flow_handler() als Interrupthandler für steigende Flanken des Durchflusssensors festlegen
-  attachInterrupt(digitalPinToInterrupt(FLOW), flow_handler, FALLING);
 
-  pinMode(DHTPIN, INPUT_PULLUP); //needs to be a pullup to readout the sensor
+  // Durchflusssensor-Signalanschlusspin als Input Pin konfigurierer
   pinMode(FLOW, INPUT);
+
+  // Die Funktion flow_handler() als Interrupthandler für steigende Flanken des Durchflusssensors festlegen
+  attachInterrupt(digitalPinToInterrupt(FLOW), flow_handler, FALLING);
+  
+  // Stromversorgungspin für Durchfluss- und Temperatur-Feuchtigkeitssensor als Output-Pin konfigurieren
   pinMode(FLOW_DHT_ON_OFF, OUTPUT);
 
-  //write sensor on/off
-  digitalWrite(MOSFET_GPS, LOW);
-  // if (bootCount%10==0) digitalWrite(MOSFET_GPS, HIGH);
-  digitalWrite(MOSFET_NANO_SMT_WATERMARK, HIGH);
-  delay(15000);
-  digitalWrite(MOSFET_PUMPE, LOW);  
-  digitalWrite(MOSFET_DS1603, HIGH);
-  digitalWrite(FLOW_DHT_ON_OFF, HIGH);
-  
-  //-----------------------
-  //-----Serial inits------
-  //-----------------------
-  // Hardwareserials
+  // Hardwareserials konfigurieren
   Serial.begin(HWSERIAL_BAUD);
-  Serial1.begin(9600, SERIAL_8N1, 12, 14); // funktioniert
-  Serial2.begin(9600, SERIAL_8N1, 16, 17); // funktioniert
+  Serial1.begin(SERIAL_BAUD, SERIAL_8N1, 12, 14); 
+  Serial2.begin(SERIAL_BAUD, SERIAL_8N1, 16, 17); 
 
-  //Softwareserial
-  smtSerial.begin(SWSERIAL_BAUD, SWSERIAL_8N1, NANO_SWSERIAL_RX,NANO_SWSERIAL_TX, false);
+  //Softwareserial für SMT100-Bodenfeuchtigkeitssensor konfigurieren
+  smtSerial.begin(SERIAL_BAUD, SWSERIAL_8N1, NANO_SWSERIAL_RX,NANO_SWSERIAL_TX, false);
   if (!smtSerial) { // If the object did not initialize, then its configuration is invalid
     if(DEBUG)Serial.println("Invalid EspSoftwareSerial pin configuration, check config"); 
     while (1) { // Don't continue with invalid configuration
       delay (1000);
     }
   }
-  /*ds1603LSerial.begin(SWSERIAL_BAUD, SWSERIAL_8N1, DS1603L_RX, DS1603L_TX, false);
-  if (!ds1603LSerial) { // If the object did not initialize, then its configuration is invalid
-    if(DEBUG)Serial.println("Invalid EspSoftwareSerial pin configuration, check config"); 
-    while (1) { // Don't continue with invalid configuration
-      delay (1000);
-    }
-  }*/
 
-  //------------------------
-  //----DeepSleep Setup-----
-  //------------------------
-  //Increment boot number
+  // Zähler für Bootvorgänge um 1 erhöhen
   ++bootCount;
-  //configure the wake up source to timer, set ESP32 to wake up every #TIME_TO_DEEPSLEEP in µs
-  esp_sleep_enable_timer_wakeup(TIME_TO_DEEPSLEEP);
-  esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_OFF);
-  if(DEBUG){
-    Serial.println("Boot number: " + String(bootCount));
-    Serial.println("Setup ESP32 to sleep for " + String(TIME_TO_DEEPSLEEP/1000000) + " Seconds");
-  }
 
-  //--------------------------
-  //------LoRaWAN setup-------
-  //--------------------------
-  // LMIC init
+  // LoRaWAN-Setup
   os_init();
-  // Reset the MAC state. Session and pending data transfers will be discarded.
   LMIC_reset();
-  //LMIC specific parameters
   LMIC_setAdrMode(0);
   LMIC_setLinkCheckMode(0);
   LMIC_setClockError(MAX_CLOCK_ERROR * 1 / 100);
-
-  delay(500);  // allow things to settle
-  
-  //-------------------------
-  //------Read Sensors-------
-  //-------------------------
-  //DHT22
+    
+  //DHT22 auslesen
+  digitalWrite(FLOW_DHT_ON_OFF, HIGH);
   dht.begin();
   delay(100);
   readDHT22();
+  digitalWrite(FLOW_DHT_ON_OFF, LOW);
   lora_data[0] = (uint8_t)dht22_.humidity;
-  lora_data[1] = (uint8_t)dht22_.temp;
-  //Truebner SMT100
+  int16_t temp_float = dht22_.temp*100;
+  lora_data[1] = highByte(temp_float);
+  lora_data[2] = lowByte(temp_float);
+  
+  // Stromversorgung von Arduino und Bodenfeuchtigkeitssensoren einschalten
+  digitalWrite(MOSFET_NANO_SMT_WATERMARK, HIGH);  
+  
+  //Truebner SMT100-Bodenfeuchtigkeitssensor auslesen
   readSMT100();
-  lora_data[2] = (uint8_t)smt100_.volwater;
-  lora_data[3] = (uint8_t)(smt100_.voltage*10);
-  //Irrometer Watermark
+  uint16_t volwater_float = smt100_.volwater*100;
+  lora_data[3] = highByte(volwater_float);
+  lora_data[4] = lowByte(volwater_float);
+  lora_data[5] = (uint8_t)(smt100_.voltage*10);
+  temp_float = smt100_.temp*100;
+  lora_data[6] = highByte(temp_float);
+  lora_data[7] = lowByte(temp_float);
+  
+  //Irrometer Watermark Bodenwasserspannungssensor auslesen
   readWatermark();
-  watermark_.adc = analogRead(WATERMARKPIN);
-  watermark_.soilwatertension = watermark_.adc/4095;
-  lora_data[4] = highByte(watermark_.adc);
-  lora_data[5] = lowByte(watermark_.adc);
-  //Ultrasonic waterlevel
+  digitalWrite(MOSFET_NANO_SMT_WATERMARK, LOW);
+  lora_data[8] = highByte(watermark_.soilwatertension);
+  lora_data[9] = lowByte(watermark_.soilwatertension);
+  
+  // Ultraschall-Tankfüllstandssensor auslesen
   digitalWrite(MOSFET_DS1603, HIGH);
   delay(100);
   ds1603.begin();
   delay(100);
   readDS1603L();
   digitalWrite(MOSFET_DS1603, LOW);
-  lora_data[6] = highByte(ds1603L_.waterlvl);
-  lora_data[7] = lowByte(ds1603L_.waterlvl);
+  if (DEBUG) Serial.println("Tankinhalt: " + String(ds1603L_.tank_content) + " L - " + String(ds1603L_.tank_content_percentage) + " %");
+  uint16_t tank_content_int = ds1603L_.tank_content*100;
+  lora_data[10] = highByte(tank_content_int);
+  lora_data[11] = lowByte(tank_content_int);
+  lora_data[12] = ds1603L_.tank_content_percentage;
 
-  //--------------WIP---------------
-  //------irrigation algorithm-------
-  //---------------------------------
-  if ((ds1603L_.waterlvl>=50) && ((watermark_.soilwatertension<=2500 && dailyWaterOutput<=20000)||(bootCount%24 == 0))){
-    
+  // Deklaration der Variable für die auszubringende Wassermenge
+  int irrigation = 0; 
 
-    // digitalWrite(MOSFET_PUMPE, !digitalRead(MOSFET_PUMPE)); //pump on
-    // while ((ds1603L_.waterlvl>=50) && (flowsens_.waterflow<=5000))
-    // {
-    //   readFlow();
-    // }
-    // digitalWrite(MOSFET_PUMPE, !digitalRead(MOSFET_PUMPE)); //pump off
-
-    // lora_data[8] = highByte(flowsens_.waterflow);
-    // lora_data[9] = lowByte(flowsens_.waterflow);
-    // dailyWaterOutput = dailyWaterOutput + flowsens_.waterflow;
-    // flowsens_.waterflow = 0;
-    // digitalWrite(FLOW_ON_OFF, LOW);
+  // Die Ausbringung der festgelegten Wassermenge soll genau dann erfolgen, wenn der Tankfüllstand höher als die Minimal messbaren 50 mm ist, die maximale
+  // tägliche Bewässserungsmenge noch nicht erreicht wurde und der prozentuale volumetrische Wassergehalt der Erde unter dem festgelegten Grenzwert liegt
+  if ((ds1603L_.waterlvl >= 52) && (dailyWaterOutput <= max_daily_irrigation) && ((smt100_.volwater < irrigation_threshold_vol)) ){
+    irrigation = irrigation_volume * 1000;
     if (DEBUG)Serial.println("Gießen!!!");
   }
 
-  //once in a day
-  if (bootCount%24==0) {
-    //ToDo GPS
-    // while(Serial1.available() > 0)
-    //   gps.encode(Serial1.read());
-    // Serial.println();
-    // readGPS();
-
-    dailyWaterOutput = 0;
-  }
-
-  unsigned long current_counter = flow_counter;
-
+  // Timestamp für die letzte Debug-Ausgabe der Bewässerungsmenge
   unsigned long lastprint = millis();
-  double flow = 0.0;
+
+  // Stromversorgung des Durchflusssensors aktivieren
+  digitalWrite(FLOW_DHT_ON_OFF, HIGH);
+
+  // Pumpe einschalten
   digitalWrite(MOSFET_PUMPE, HIGH);
-  while (flow < 0)
+
+  // Variable für die ausgebrachte Wassermenge deklarieren
+  double flow = 0.0;
+
+  // Schleife läuft, solange die ausgebrachte Wassermenge kleiner als die Zielmenge ist
+  while (flow < irrigation)
   {
-    flow = (flow_counter - current_counter) * mls_per_count;
-    if (millis() - lastprint >= 1000)
+    // Bisher ausgebrachte Wassermenge auslesen
+    flow = readFlow();
+
+    // Alle 1000 ms Debug-Message ausgeben, falls DEBUG = 1
+    if ((millis() - lastprint >= 1000) && DEBUG)
     {
       Serial.println("Flow counter: " + (String) flow_counter);
       Serial.println("Flow: " + (String) flow);
       lastprint = millis();
     }
   }
+  
+  // Pumpe ausschalten 
   digitalWrite(MOSFET_PUMPE, LOW);
-  lora_data[8] = flow/1000;
 
-  //-----------------------------------
-  //------send LoRaWAN Dataframe-------
-  //-----------------------------------
-  os_runloop_once();
-  do_send(&sendjob);
-
-  //----------------------------
-  //------enter DeepSleep-------
-  //----------------------------
-  //pull down all output pins
-  digitalWrite(MOSFET_GPS, LOW);
-  delay(5000);
-  digitalWrite(MOSFET_NANO_SMT_WATERMARK, LOW);
-  digitalWrite(MOSFET_PUMPE, LOW);  
-  digitalWrite(MOSFET_DS1603, LOW);
+  // Stromversorgung des Durchflusssensors deaktivieren
   digitalWrite(FLOW_DHT_ON_OFF, LOW);
-  if(DEBUG)Serial.println("Going to sleep now");
-  Serial.flush();
-  Serial1.flush();
-  Serial2.flush();
-  //ds1603LSerial.flush();
-  smtSerial.flush();
+  
+  // Ausgebrachte Wassermenge zum Zähler für die tägliche Bewässerungsmenge hinzuaddieren
+  dailyWaterOutput = dailyWaterOutput + flow;
+  
+  // Im aktuellen Bewässerungsgang ausgebrachte Wassermenge in den LoRa-Buffer schreiben
+  uint16_t irrigation_volume_int = flowsens_.waterflow*100;
+  lora_data[13] = highByte(irrigation_volume_int);
+  lora_data[14] = lowByte(irrigation_volume_int);
+
+  // Inhalt des LoRa-Buffers übertragen
+  do_send(&sendjob);
   delay(200);
-  esp_deep_sleep_start();
 }
+
+// Variable, die auf true gesetzt wird, wenn alle Messungs-, Gieß- und Datenübertragungsvorgänge abgeschlossen wurden
+bool GOTO_DEEPSLEEP_TIMEOUT = false;
+bool GOTO_DEEPSLEEP_TRANS_SUCCESS = false;
 
 void loop() {
+
+  // Überprüfen, ob Daten zur LoRa-Übertragung zur Verfügung stehen und Sendevorgang initiieren, wenn möglich
+  os_runloop_once();
+  
+  // Überprüfen, ob im Zeitraum des nächsten Deepsleeps Daten gesendet werden sollen
+  // if(!os_queryTimeCriticalJobs(ms2osticksRound( (TIME_TO_DEEPSLEEP*1000) ))) {
+    
+  //   // Wenn in dem Zeitraum keine Daten gesendet werden sollen und alle aktuellen Aufgaben abgearbeitet wurden Deepsleep initiieren
+  //   GOTO_DEEPSLEEP_TRANS_SUCCESS = true;
+  // }
+
+  // Wenn die Übertragung der gemessenen Daten nicht innerhalb des definierten Zeitintervalls erfolgen konnte, von einem
+  // Verbindungsverlust ausgehen und ESP wieder in den Deepsleep versetzen
+  if (millis() > LORA_TIMEOUT) {
+    if (DEBUG)Serial.println("No LoRaWAN connection");
+    GOTO_DEEPSLEEP_TIMEOUT = true;
+  }
+
+  if(GOTO_DEEPSLEEP_TIMEOUT || GOTO_DEEPSLEEP_TRANS_SUCCESS){
+      Serial.flush();
+      Serial1.flush();
+      Serial2.flush();
+      smtSerial.flush();
+      if(DEBUG){
+        Serial.println("Setup ESP32 to sleep for " + String(TIME_TO_DEEPSLEEP) + " Seconds");
+        Serial.println("Going to sleep now");
+      }
+      
+      // LoRaWAN-Modul in den Standby versetzen
+      LMIC_shutdown();
+
+      // Deepsleep bis zum nächsten geplanten Aufweckzeitpunkt initiieren
+      esp_sleep_enable_timer_wakeup(TIME_TO_DEEPSLEEP * 1000000 - (millis()/1000));
+      esp_deep_sleep_start();
+    }
 }
 
-bool readDHT22(void) {
-  bool read = false;
-  dht22_.humidity = dht.readHumidity();    // Lesen der Luftfeuchtigkeit und speichern in die Variable h
-  dht22_.temp = dht.readTemperature(); // Lesen der Temperatur in °C und speichern in die Variable t
+// Funktion für das Auslesen des Temperatur-Luftfeuchtigkeitssensors
+void readDHT22(void) {
+  float humidity = NAN;
+  float temperature = NAN;
+  if (DEBUG)
+    Serial.print("Reading DHT");
+  while (isnan(humidity) || isnan( temperature)) {
+    delay(3000);
+    humidity = dht.readHumidity(); // Lesen der Luftfeuchtigkeit und speichern in die Variable h
+    temperature = dht.readTemperature(); // Lesen der Temperatur in °C und speichern in die Variable t
+    if (DEBUG)
+      Serial.print(".");
+  }
+    
+  dht22_.humidity = humidity;   
+  dht22_.temp = temperature; 
   if (DEBUG){
     Serial.print("Luftfeuchtigkeit:");
     Serial.print(dht22_.humidity);                  // Ausgeben der Luftfeuchtigkeit
@@ -320,54 +253,60 @@ bool readDHT22(void) {
     Serial.write("°");                // Schreiben des ° Zeichen
     Serial.println("C");
   }
-  /*********************( Überprüfen ob alles richtig Ausgelesen wurde )*********************/ 
-  if (isnan(dht22_.humidity) || isnan(dht22_.temp)) {       
+  // Überprüfen ob alles richtig ausgelesen wurde
+  if (isnan((dht22_.humidity) || isnan(dht22_.temp)) && DEBUG)      
     Serial.println("Fehler beim auslesen des Sensors!");
-    read = false;
-  }else read = true;
-  
-  return read;
 }
 
-void flow_handler() {
+// Funktion, die den Zähler des Durchflussensors um 1 erhöht, wenn der Hall-Sensor des Schaufelrades eine Umdrehung registriert
+void flow_handler(void) {
   flow_counter++;
 }
 
-void readFlow(void) {
-  unsigned long current_counter = flow_counter;
-  Serial.println((String) "Flow Counter: " + current_counter);
-  Serial.println((String) "Delta: " + (current_counter - old_counter));
-  old_counter = current_counter;
+// Funktion, die den aktuellen Stand des Durchflusszählers ausliest und im Struct des Sensors speichert und zurückgibt
+double readFlow(void) {
   flowsens_.waterflow = flow_counter * mls_per_count;
-  Serial.println((String) (flowsens_.waterflow) + " ml");
+  return flowsens_.waterflow;
 }
 
+// Funktion, die den Ultraschall-Tankfüllstandssensor ausliest
 void readDS1603L(void) {
   Serial.println(F("Starting reading."));
-  ds1603L_.waterlvl = ds1603.readSensor();       // Call this as often or as little as you want - the sensor transmits every 1-2 seconds.
-  byte sensorStatus = ds1603.getStatus();           // Check the status of the sensor (not detected; checksum failed; reading success).
-  switch (sensorStatus) {                           // For possible values see DS1603L.h
-    case DS1603L_NO_SENSOR_DETECTED:                // No sensor detected: no valid transmission received for >10 seconds.
-      Serial.println(F("No sensor detected (yet). If no sensor after 1 second, check whether your connections are good."));
-      break;
+  ds1603L_.waterlvl = ds1603.readSensor();       
+  byte sensorStatus = ds1603.getStatus();
+  while (sensorStatus == DS1603L_NO_SENSOR_DETECTED) {      
+    switch (sensorStatus) {                        
+      case DS1603L_NO_SENSOR_DETECTED:             
+        Serial.println(F("No sensor detected (yet). If no sensor after 1 second, check whether your connections are good."));
+        break;
 
-    case DS1603L_READING_CHECKSUM_FAIL:             // Checksum of the latest transmission failed.
-      Serial.print(F("Data received; checksum failed. Latest level reading: "));
-      Serial.print(ds1603L_.waterlvl);
-      Serial.println(F(" mm."));
-      break;
+      case DS1603L_READING_CHECKSUM_FAIL:            
+        Serial.print(F("Data received; checksum failed. Latest level reading: "));
+        Serial.print(ds1603L_.waterlvl);
+        Serial.println(F(" mm."));
+        break;
 
-    case DS1603L_READING_SUCCESS:                   // Latest reading was valid and received successfully.
-      Serial.print(F("Reading success. Water level: "));
-      Serial.print(ds1603L_.waterlvl);
-      Serial.println(F(" mm."));
-      break;
-  }
+      case DS1603L_READING_SUCCESS:
+        Serial.print(F("Reading success. Water level: "));
+        Serial.print(ds1603L_.waterlvl);
+        Serial.println(F(" mm."));
+        break;
+    }
+    delay(2000);
+    ds1603L_.waterlvl = ds1603.readSensor();
+    sensorStatus = ds1603.getStatus();
+  } 
+  // Berechnung des Tankfüllstands in Litern (abzüglich der 8 mm Wandstärke des Tankbodens)
+  ds1603L_.tank_content = tank_length * tank_width * (ds1603L_.waterlvl - 8) / 1000000.0;
+
+  // Berechung des Prozentualen Tankfüllstands
+  ds1603L_.tank_content_percentage = round((ds1603L_.tank_content/tank_volume)*100);
 }
 
+// Funktion für das Auslesen des Sensors für die volumetrische Bodenfeuchtigkeit
 void readSMT100(void){
-  String SensorInfo = "<?M!>";
-  String Measure = "<?D0!>";
+  String start_measurement = "<?M!>";
+  String request_measurements = "<?D0!>";
   char c = ' ';
   const int BUFFER_SIZE = 50;
   char buf[BUFFER_SIZE];
@@ -377,21 +316,35 @@ void readSMT100(void){
   String stm100temp_s;
   String stm100moisture_s;
   String stm100voltage_s;
-  smtSerial.print(SensorInfo);
-  delay(300);                    // wait a while for a response
-  Serial.print("reading smt");
-  while (smtSerial.available()) {  // write the response to the screen
+  
+  // Neue Messung auslösen
+  smtSerial.print(start_measurement);
+  
+  //delay(300);###################################################################################                    
+  
+  if(DEBUG)
+    Serial.print("reading smt");
+  
+  while (smtSerial.available()) {  
     c = smtSerial.read();
-    Serial.print(".");
+    
+    if(DEBUG) 
+      Serial.print(".");
   }
-  Serial.println();
-  delay(2000);  // print again in three seconds
-  smtSerial.print(Measure);
-  delay(300);                    // wait a while for a response
-  while (smtSerial.available()) {  // write the response to the screen
-    // read the incoming bytes:
+  if (DEBUG)
+    Serial.println();
+  
+  // Auf Fertigstellung der aktuellen Messung warten
+  delay(2000);
+  
+  // Messergebnisse abrufen
+  smtSerial.print(request_measurements);
+
+  // delay(300); ########################################################################################
+  
+  // Dekodieren der empfangenen Antwort
+  while (smtSerial.available()) {  
     int rlen = smtSerial.readBytes(buf, BUFFER_SIZE);
-    // prints the received data   
     for (int i = 0; i < rlen; i++) {
       if (buf[i] == '+') j++;
       else if (j == 2) stm100_calibrated_permittivity_s += (String)buf[i];
@@ -400,6 +353,8 @@ void readSMT100(void){
       else if (j == 5) stm100voltage_s += (String)buf[i];    
     }
   }
+
+  // Testausgabe
   if (DEBUG){
     Serial.println("-----SMT100 Data-----");
     Serial.print("Calibrated permittivity: ");Serial.println(stm100_calibrated_permittivity_s); 
@@ -407,12 +362,16 @@ void readSMT100(void){
     Serial.print("Temperature: ");Serial.println(stm100temp_s);
     Serial.print("Voltage: ");Serial.println(stm100voltage_s);
   }
+
+  // Abspeichern der Messergebnisse
   smt100_.permittivity = stm100_calibrated_permittivity_s.toFloat();
   smt100_.volwater = stm100moisture_s.toFloat();
   smt100_.temp = stm100temp_s.toFloat();
   smt100_.voltage = stm100voltage_s.toFloat();
 }
 
+
+// Funktion zum Auslesen des GPS-Moduls
 void readGPS(){
   String gpsLocation = "";
   if (gps.date.isValid() && (gps.date.age() <= 1500)){
@@ -447,13 +406,18 @@ void readGPS(){
   Serial.println(gpsLocation);
 }
 
+// Funktion zum Auslesen des Bodenwasserspannungssensors
 void readWatermark() {
   int raw = analogRead(WATERMARKPIN);
   float kPa = (raw * 3.3 * 239) / (4095 * 2.8);
-  Serial.println ("Volt: " + (String) (raw * 3.3/ 4095));
-  Serial.println("Bodenwasserspannung: " + (String) kPa + " kPa");
+  if(DEBUG){
+    Serial.println ("Volt: " + (String) (raw * 3.3/ 4095));
+    Serial.println("Bodenwasserspannung: " + (String) kPa + " kPa");
+  }
+  watermark_.soilwatertension = kPa;
 }
 
+// Funktion zum Dekodieren von LoRaWAN-Ereignissen
 void onEvent (ev_t ev) {
     Serial.print(os_getTime());
     Serial.print(": ");
@@ -475,9 +439,6 @@ void onEvent (ev_t ev) {
             break;
         case EV_JOINED:
             Serial.println(F("EV_JOINED"));
- 
-            // Disable link check validation (automatically enabled
-            // during join, but not supported by TTN at this time).
             LMIC_setLinkCheckMode(0);
             break;
         case EV_RFU1:
@@ -491,6 +452,7 @@ void onEvent (ev_t ev) {
             break;
             break;
         case EV_TXCOMPLETE:
+            GOTO_DEEPSLEEP_TRANS_SUCCESS = true;
             Serial.println(F("EV_TXCOMPLETE (includes waiting for RX windows)"));
             if (LMIC.txrxFlags & TXRX_ACK)
               Serial.println(F("Received ack"));
@@ -499,8 +461,6 @@ void onEvent (ev_t ev) {
               Serial.println(LMIC.dataLen);
               Serial.println(F(" bytes of payload"));
             }
-            // Schedule next transmission
-            os_setTimedCallback(&sendjob, os_getTime()+sec2osticks(TX_INTERVAL), do_send);
             break;
         case EV_LOST_TSYNC:
             Serial.println(F("EV_LOST_TSYNC"));
@@ -509,7 +469,6 @@ void onEvent (ev_t ev) {
             Serial.println(F("EV_RESET"));
             break;
         case EV_RXCOMPLETE:
-            // data received in ping slot
             Serial.println(F("EV_RXCOMPLETE"));
             break;
         case EV_LINK_DEAD:
@@ -523,15 +482,15 @@ void onEvent (ev_t ev) {
             break;
     }
 }
- 
+
+// Funktion für das Starten von LoRaWAN Sendeaufträgen
 void do_send(osjob_t* j){
-    // Check if there is not a current TX/RX job running
+    // Überprüfen, ob aktuell eine Übertragung läuft
     if (LMIC.opmode & OP_TXRXPEND) {
         Serial.println(F("OP_TXRXPEND, not sending"));
     } else {
-        // Prepare upstream data transmission at the next possible time.
+        // Wenn keine Übertragung läuft, Daten für die Übertragung zum nächstmöglichen Zeitpunt vorbereiten
         LMIC_setTxData2(1, lora_data, sizeof(lora_data)-1, 0);
         Serial.println(F("Packet queued"));
     }
-    // Next TX is scheduled after TX_COMPLETE event.
 }
