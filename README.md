@@ -7,17 +7,21 @@
 
 ## Workspace Setup
 * open vsCode and install following extensions:
-    * Git Graph
-    * Git Lens
+    * PlatformIO
+    * for easier Git use:
+       * Git Graph
+       * Git Lens
 * create a local workspace folder
 * open workspace folder with vsCode under File-> Open Folder
 * open the vsCode Terminal under View->Terminal
+```bash
+cd ../<YOUR_WORKSPACE>
+```
 
 
 The code can be cloned from GitHub into a local workspace 
 
 ```bash
-cd ../<YOUR_WORKSPACE>
 git clone https://github.com/tomfmz/smart3irrigation.git
 ```
 
@@ -27,9 +31,9 @@ If you are using this library for development, please follow the proper procedur
 ### Create your new branch
 Checking out on to the develop banch and create your new feature branch from there.
 
-Checkout to develop branch
+Checkout to main branch
 ```bash
-git checkout develop
+git checkout main
 ```
 Create your new branch
 ```bash
@@ -41,7 +45,7 @@ git branch
 ```
 If your branch name appears in the list, then everything was successful. You have now created a branch off of the .
 
-**NOTE: DO NOT PUSH TO THE MASTER BRANCH UNLESS YOU KNOW WHAT YOU'RE DOING!!!** Always push to your development branch first. A merge can be done by the maintainer at a later date.
+**NOTE: DO NOT PUSH TO THE MAIN BRANCH UNLESS YOU KNOW WHAT YOU'RE DOING!!!** Always push to your development branch first. A merge can be done by the maintainer at a later date.
 
 ### Version Control
 
