@@ -54,8 +54,11 @@ void setup() {
   pinMode(MOSFET_PUMPE, OUTPUT);
   pinMode(MOSFET_DS1603, OUTPUT);
 
-  // Durchflusssensor-Signalanschlusspin als Input Pin konfigurierer
+  // Durchflusssensor-Signalanschlusspin als Input Pin konfigurieren
   pinMode(FLOW, INPUT);
+
+  // ADC Pin für Voltmeter als Input Pin konfigurieren
+  pinMode(WATERMARKPIN, INPUT);
 
   // Die Funktion flow_handler() als Interrupthandler für steigende Flanken des Durchflusssensors festlegen
   attachInterrupt(digitalPinToInterrupt(FLOW), flow_handler, FALLING);
@@ -177,7 +180,7 @@ void setup() {
   dailyWaterOutput = dailyWaterOutput + flow;
   
   // Im aktuellen Bewässerungsgang ausgebrachte Wassermenge in den LoRa-Buffer schreiben
-  uint16_t irrigation_volume_int = flowsens_.waterflow*100;
+  uint16_t irrigation_volume_int = flowsens_.waterflow/10;
   lora_data[13] = highByte(irrigation_volume_int);
   lora_data[14] = lowByte(irrigation_volume_int);
 
@@ -411,6 +414,7 @@ void readWatermark() {
   int raw = analogRead(WATERMARKPIN);
   float kPa = (raw * 3.3 * 239) / (4095 * 2.8);
   if(DEBUG){
+    Serial.println("Raw: " + (String) raw);
     Serial.println ("Volt: " + (String) (raw * 3.3/ 4095));
     Serial.println("Bodenwasserspannung: " + (String) kPa + " kPa");
   }

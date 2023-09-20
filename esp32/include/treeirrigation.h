@@ -80,13 +80,13 @@
 const double mls_per_count = 3.0382;
 
 // Wasserausbringsmenge für einen Bewässerungsgang [L]
-float irrigation_volume = 0.0;
+float irrigation_volume = 5.0;
 
 // Maximale tägliche Bewässerungsmenge [L]
 float max_daily_irrigation = 20.0;
 
 // Volumetrischer Grenzwert für die Bewässerung [%]
-float irrigation_threshold_vol = 20.0;
+float irrigation_threshold_vol = 17.5;
 
 // Tankinnenmaße [mm]
 const int tank_length = 734;
