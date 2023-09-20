@@ -19,6 +19,9 @@ TinyGPSPlus gps;
 // Zählervariable für die Umdrehungen des Durchflusssensor-Schaufelrades definieren
 volatile unsigned long flow_counter = 0;
 
+//Zeit die die Bewässerung in annspruch nimmt
+unsigned long irrigation_time = 0;
+
 // Deklaration der Interrupthandler-Funktion für das Durchflusssensorsignal
 void flow_handler(void);
 
@@ -155,6 +158,8 @@ void setup() {
   // Variable für die ausgebrachte Wassermenge deklarieren
   double flow = 0.0;
 
+
+  irrigation_time = millis();
   // Schleife läuft, solange die ausgebrachte Wassermenge kleiner als die Zielmenge ist
   while (flow < irrigation)
   {
@@ -169,7 +174,7 @@ void setup() {
       lastprint = millis();
     }
   }
-  
+  irrigation_time = millis()-irrigation_time;
   // Pumpe ausschalten 
   digitalWrite(MOSFET_PUMPE, LOW);
 
@@ -207,7 +212,7 @@ void loop() {
 
   // Wenn die Übertragung der gemessenen Daten nicht innerhalb des definierten Zeitintervalls erfolgen konnte, von einem
   // Verbindungsverlust ausgehen und ESP wieder in den Deepsleep versetzen
-  if (millis() > LORA_TIMEOUT) {
+  if (millis() > (LORA_TIMEOUT+irrigation_time)) {
     if (DEBUG)Serial.println("No LoRaWAN connection");
     GOTO_DEEPSLEEP_TIMEOUT = true;
   }
