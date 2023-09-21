@@ -148,6 +148,7 @@ void setup() {
 
   // Timestamp für die letzte Debug-Ausgabe der Bewässerungsmenge
   unsigned long lastprint = millis();
+  unsigned long lastflowcheck = millis();
 
   // Stromversorgung des Durchflusssensors aktivieren
   digitalWrite(FLOW_DHT_ON_OFF, HIGH);
@@ -158,21 +159,30 @@ void setup() {
   // Variable für die ausgebrachte Wassermenge deklarieren
   double flow = 0.0;
 
-
+  int flow_old = 0;
   irrigation_time = millis();
+  bool irrigationtimeout = false;
   // Schleife läuft, solange die ausgebrachte Wassermenge kleiner als die Zielmenge ist
-  while (flow < irrigation)
+  while ((flow < irrigation) && !irrigationtimeout)
   {
     // Bisher ausgebrachte Wassermenge auslesen
     flow = readFlow();
 
     // Alle 1000 ms Debug-Message ausgeben, falls DEBUG = 1
-    if ((millis() - lastprint >= 1000) && DEBUG)
-    {
+    if ((millis() - lastprint >= 1000) && DEBUG){
       Serial.println("Flow counter: " + (String) flow_counter);
       Serial.println("Flow: " + (String) flow);
       lastprint = millis();
     }
+
+    if ((millis() - lastflowcheck >= 5000)){
+      if ((flow-flow_old)<=20){
+        if (DEBUG) Serial.println("Gießtimeout. Gießvorgang wird abgebrochen")
+        irrigationtimeout = true;
+      }
+      lastflowcheck = millis();
+      flow_old = flow;
+    }    
   }
   irrigation_time = millis()-irrigation_time;
   // Pumpe ausschalten 
