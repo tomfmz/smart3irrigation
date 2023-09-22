@@ -141,7 +141,7 @@ void setup() {
 
   // Die Ausbringung der festgelegten Wassermenge soll genau dann erfolgen, wenn der Tankfüllstand höher als die Minimal messbaren 50 mm ist, die maximale
   // tägliche Bewässserungsmenge noch nicht erreicht wurde und der prozentuale volumetrische Wassergehalt der Erde unter dem festgelegten Grenzwert liegt
-  if ((ds1603L_.waterlvl >= 52) && (dailyWaterOutput <= max_daily_irrigation) && ((smt100_.volwater < irrigation_threshold_vol)) ){
+  if ((ds1603L_.waterlvl >= 52) && (dailyWaterOutput <= max_daily_irrigation*1000) && ((smt100_.volwater < irrigation_threshold_vol)) ){
     irrigation = irrigation_volume * 1000;
     if (DEBUG)Serial.println("Gießen!!!");
   }
@@ -196,6 +196,7 @@ void setup() {
   
   // Im aktuellen Bewässerungsgang ausgebrachte Wassermenge in den LoRa-Buffer schreiben
   uint16_t irrigation_volume_int = flowsens_.waterflow/10;
+  if (DEBUG) Serial.println("Gesendete Gießmenge: " + (String)irrigation_volume_int);
   lora_data[13] = highByte(irrigation_volume_int);
   lora_data[14] = lowByte(irrigation_volume_int);
 
