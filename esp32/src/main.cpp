@@ -177,7 +177,7 @@ void setup() {
 
     if ((millis() - lastflowcheck >= 5000)){
       if ((flow-flow_old)<=20){
-        if (DEBUG) Serial.println("Gießtimeout. Gießvorgang wird abgebrochen")
+        if (DEBUG) Serial.println("Gießtimeout. Gießvorgang wird abgebrochen");
         irrigationtimeout = true;
       }
       lastflowcheck = millis();
