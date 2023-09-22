@@ -196,9 +196,10 @@ void setup() {
   
   // Im aktuellen Bewässerungsgang ausgebrachte Wassermenge in den LoRa-Buffer schreiben
   uint16_t irrigation_volume_int = flowsens_.waterflow/10;
-  if (DEBUG) Serial.println("Gesendete Gießmenge: " + (String)irrigation_volume_int);
   lora_data[13] = highByte(irrigation_volume_int);
   lora_data[14] = lowByte(irrigation_volume_int);
+
+  if (DEBUG) Serial.println("Gesendete Gießmenge: " + (String)irrigation_volume_int);
 
   // Inhalt des LoRa-Buffers übertragen
   do_send(&sendjob);

@@ -111,7 +111,7 @@ void do_send(osjob_t* j);
 void onEvent (ev_t ev);
 
 // LoRaWAN-Buffer
-static uint8_t lora_data[15];
+static uint8_t lora_data[16];
 
 // Objekt für den aktuellen LoRA-Sendevorgang
 static osjob_t sendjob;
