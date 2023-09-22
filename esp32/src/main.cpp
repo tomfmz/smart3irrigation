@@ -252,14 +252,16 @@ void loop() {
 void readDHT22(void) {
   float humidity = NAN;
   float temperature = NAN;
+  int read_cycle_counter = 0;
   if (DEBUG)
     Serial.print("Reading DHT");
-  while (isnan(humidity) || isnan( temperature)) {
+  while ((isnan(humidity) || isnan(temperature)) && (read_cycle_counter<=10)) {
     delay(3000);
     humidity = dht.readHumidity(); // Lesen der Luftfeuchtigkeit und speichern in die Variable h
     temperature = dht.readTemperature(); // Lesen der Temperatur in °C und speichern in die Variable t
     if (DEBUG)
       Serial.print(".");
+    read_cycle_counter++;
   }
     
   dht22_.humidity = humidity;   
