@@ -86,7 +86,7 @@ float irrigation_volume = 5.0;
 float max_daily_irrigation = 20.0;
 
 // Volumetrischer Grenzwert für die Bewässerung [%]
-float irrigation_threshold_vol = 17.5;
+float irrigation_threshold_vol = 25;
 
 // Tankinnenmaße [mm]
 const int tank_length = 734;
