@@ -19,8 +19,8 @@ TinyGPSPlus gps;
 // Zählervariable für die Umdrehungen des Durchflusssensor-Schaufelrades definieren
 volatile unsigned long flow_counter = 0;
 
-//Zeit die die Bewässerung in annspruch nimmt
-unsigned long irrigation_time = 0;
+//Zeit die das Senden der LoRaWAN Daten in annspruch nimmt
+unsigned long lora_timer = 0;
 
 // Deklaration der Interrupthandler-Funktion für das Durchflusssensorsignal
 void flow_handler(void);
@@ -160,7 +160,6 @@ void setup() {
   double flow = 0.0;
 
   int flow_old = 0;
-  irrigation_time = millis();
   bool irrigationtimeout = false;
   // Schleife läuft, solange die ausgebrachte Wassermenge kleiner als die Zielmenge ist
   while ((flow < irrigation) && !irrigationtimeout)
@@ -184,7 +183,6 @@ void setup() {
       flow_old = flow;
     }    
   }
-  irrigation_time = millis()-irrigation_time;
   // Pumpe ausschalten 
   digitalWrite(MOSFET_PUMPE, LOW);
 
@@ -210,6 +208,8 @@ void setup() {
 bool GOTO_DEEPSLEEP_TIMEOUT = false;
 bool GOTO_DEEPSLEEP_TRANS_SUCCESS = false;
 
+lora_timer = millis();
+
 void loop() {
 
   // Überprüfen, ob Daten zur LoRa-Übertragung zur Verfügung stehen und Sendevorgang initiieren, wenn möglich
@@ -224,7 +224,7 @@ void loop() {
 
   // Wenn die Übertragung der gemessenen Daten nicht innerhalb des definierten Zeitintervalls erfolgen konnte, von einem
   // Verbindungsverlust ausgehen und ESP wieder in den Deepsleep versetzen
-  if (millis() > (LORA_TIMEOUT+irrigation_time)) {
+  if ((millis()-lora_timer) > LORA_TIMEOUT) {
     if (DEBUG)Serial.println("No LoRaWAN connection");
     GOTO_DEEPSLEEP_TIMEOUT = true;
   }
@@ -255,7 +255,7 @@ void readDHT22(void) {
   int read_cycle_counter = 0;
   if (DEBUG)
     Serial.print("Reading DHT");
-  while ((isnan(humidity) || isnan(temperature)) && (read_cycle_counter<=10)) {
+  while ((isnan(humidity) || isnan(temperature)) && (read_cycle_counter<=50)) {
     delay(3000);
     humidity = dht.readHumidity(); // Lesen der Luftfeuchtigkeit und speichern in die Variable h
     temperature = dht.readTemperature(); // Lesen der Temperatur in °C und speichern in die Variable t
