@@ -22,6 +22,10 @@ volatile unsigned long flow_counter = 0;
 //Zeit die das Senden der LoRaWAN Daten in annspruch nimmt
 unsigned long lora_timer = 0;
 
+// Variable, die auf true gesetzt wird, wenn alle Messungs-, Gieß- und Datenübertragungsvorgänge abgeschlossen wurden
+bool GOTO_DEEPSLEEP_TIMEOUT = false;
+bool GOTO_DEEPSLEEP_TRANS_SUCCESS = false;
+
 // Deklaration der Interrupthandler-Funktion für das Durchflusssensorsignal
 void flow_handler(void);
 
@@ -202,13 +206,9 @@ void setup() {
   // Inhalt des LoRa-Buffers übertragen
   do_send(&sendjob);
   delay(200);
+
+  lora_timer = millis();
 }
-
-// Variable, die auf true gesetzt wird, wenn alle Messungs-, Gieß- und Datenübertragungsvorgänge abgeschlossen wurden
-bool GOTO_DEEPSLEEP_TIMEOUT = false;
-bool GOTO_DEEPSLEEP_TRANS_SUCCESS = false;
-
-lora_timer = millis();
 
 void loop() {
 
